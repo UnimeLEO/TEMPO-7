@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#17191c" />
+  <title>TEMPO-7</title>
+  <link rel="stylesheet" href="style.css?v=0.3.0" />
+</head>
+<body>
+  <div id="transitionFlash" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="brand">TEMPO-7</div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.3.0</span><span id="systemDate">----</span></div>
+    </div>
+
+    <div class="top-controls">
+      <label class="compact-field">
+        <span>TEMPLATE</span>
+        <select id="activeTemplateSelect" aria-label="当前日程模板"></select>
+      </label>
+      <button id="startTodayBtn" class="btn btn-primary">START TODAY</button>
+      <button id="todayBtn" class="btn">TODAY</button>
+      <button id="editScheduleBtn" class="btn">EDIT</button>
+      <button id="dataBtn" class="btn">DATA</button>
+      <button id="soundBtn" class="btn">SOUND</button>
+      <button id="simulateBtn" class="btn">SIM TIME</button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section id="hero" class="hero" data-state="free">
+      <div class="hero-topline">
+        <div>
+          <div class="eyebrow-row">
+            <div class="eyebrow">CURRENT</div>
+            <span id="todayModeBadge" class="today-mode-badge" hidden>TODAY // MODIFIED</span>
+          </div>
+          <h1 id="currentTaskName">载入中…</h1>
+        </div>
+        <div class="hero-meta">
+          <div id="categoryBadge" class="category-badge">FREE</div>
+          <div id="currentTaskRange" class="task-range">--:-- — --:--</div>
+        </div>
+      </div>
+
+      <div class="countdown-wrap">
+        <div id="countdown" class="countdown">--:--</div>
+        <div id="countdownLabel" class="countdown-label">UNTIL NEXT STATE</div>
+      </div>
+
+      <div class="progress-block">
+        <div class="progress-info">
+          <span id="progressLabel">STATE PROGRESS</span>
+          <span id="progressPercent">0%</span>
+        </div>
+        <div class="progress-track" aria-label="当前任务进度">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="lower-grid">
+      <article class="panel next-panel">
+        <div class="panel-header">
+          <span class="eyebrow">NEXT</span>
+          <span id="nextStartsIn" class="panel-kicker">--</span>
+        </div>
+        <div id="nextTaskName" class="next-task-name">--</div>
+        <div id="nextTaskRange" class="next-task-range">--:-- — --:--</div>
+        <div id="nextTaskCategory" class="next-task-category">--</div>
+      </article>
+
+      <article class="panel schedule-panel">
+        <div class="panel-header">
+          <span class="eyebrow">SCHEDULE</span>
+          <span id="dayProgress" class="panel-kicker">TODAY 0 / 0</span>
+        </div>
+        <div id="scheduleList" class="schedule-list" tabindex="0" aria-label="今日剩余日程，支持自动巡航与手动滚动"></div>
+      </article>
+    </section>
+  </main>
+
+  <div id="simulationBanner" class="simulation-banner" hidden>
+    <span>SIMULATED TIME ACTIVE</span>
+    <strong id="simulationClock">--:--:--</strong>
+    <button id="exitSimulationBtn" class="btn btn-danger">EXIT SIMULATION</button>
+  </div>
+
+  <dialog id="scheduleDialog" class="modal modal-wide">
+    <form method="dialog" class="modal-frame" id="scheduleForm">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">SCHEDULE CONFIGURATION</div>
+          <h2>日程编辑器</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <div class="template-toolbar">
+        <label class="field grow">
+          <span>模板</span>
+          <select id="editorTemplateSelect"></select>
+        </label>
+        <button type="button" id="newTemplateBtn" class="btn">NEW</button>
+        <button type="button" id="duplicateTemplateBtn" class="btn">DUPLICATE</button>
+        <button type="button" id="deleteTemplateBtn" class="btn btn-danger-outline">DELETE</button>
+      </div>
+
+      <label class="field">
+        <span>模板名称</span>
+        <input id="templateNameInput" type="text" maxlength="60" />
+      </label>
+
+      <div class="editor-hint">只使用时间段。允许空档，但不允许任务互相重叠。时间按当天计算，不跨午夜。</div>
+
+      <div class="schedule-editor-head">
+        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span></span>
+      </div>
+      <div id="scheduleRows" class="schedule-editor"></div>
+
+      <div id="scheduleError" class="error-box" hidden></div>
+
+      <div class="modal-actions split-actions">
+        <button type="button" id="addTaskBtn" class="btn">+ ADD BLOCK</button>
+        <div class="right-actions">
+          <button class="btn" value="cancel">CANCEL</button>
+          <button type="button" id="saveScheduleBtn" class="btn btn-primary">SAVE</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="todayDialog" class="modal modal-wide">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">TODAY OVERRIDE</div>
+          <h2>今日临时修改</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <div class="today-meta-grid">
+        <div class="today-meta-cell"><span>DATE</span><strong id="todayDateLabel">----</strong></div>
+        <div class="today-meta-cell"><span>BASE TEMPLATE</span><strong id="todayBaseTemplate">--</strong></div>
+        <div class="today-meta-cell"><span>STATE</span><strong id="todayStatusLabel">TEMPLATE</strong></div>
+      </div>
+
+      <div class="editor-hint">这里只修改今天。EDIT 模板不会被改动；SKIP 会从今天移除该时间段；允许空档，但时间段不能互相重叠。</div>
+
+      <div class="today-editor-head">
+        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>ACTION</span>
+      </div>
+      <div id="todayRows" class="schedule-editor today-editor"></div>
+
+      <div id="todayError" class="error-box" hidden></div>
+      <div id="todayMessage" class="message-box success" hidden></div>
+
+      <div class="modal-actions split-actions">
+        <div class="left-actions">
+          <button type="button" id="addTodayTaskBtn" class="btn">+ ADD TASK</button>
+          <button type="button" id="resetTodayBtn" class="btn btn-danger-outline">RESET TODAY</button>
+        </div>
+        <div class="right-actions">
+          <button class="btn" value="cancel">CANCEL</button>
+          <button type="button" id="saveTodayBtn" class="btn btn-primary">SAVE TODAY</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dataDialog" class="modal">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">LOCAL DATA</div>
+          <h2>备份与恢复</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.3.0 会把模板、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
+
+      <div class="data-actions">
+        <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT JSON</button>
+        <label class="btn file-btn">IMPORT JSON<input id="importJsonInput" type="file" accept="application/json,.json" /></label>
+      </div>
+      <div id="dataMessage" class="message-box" hidden></div>
+    </form>
+  </dialog>
+
+
+  <dialog id="soundDialog" class="modal">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">SOUND CONTROL</div>
+          <h2>铃声设置</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <p class="modal-copy">当前版本把铃声绑定到 CLASS 分类：进入课程时播放上课铃，离开课程时播放下课铃。支持 MP3 / WAV。页面重新打开后，需要点击一次 ENABLE SOUND 重新激活浏览器音频权限。</p>
+
+      <div class="sound-master-row">
+        <label class="switch-field">
+          <input id="soundEnabledInput" type="checkbox" />
+          <span>ENABLE BELLS</span>
+        </label>
+        <label class="volume-field">
+          <span>VOLUME</span>
+          <input id="soundVolumeInput" type="range" min="0" max="100" step="1" />
+          <strong id="soundVolumeValue">80%</strong>
+        </label>
+      </div>
+
+      <div class="sound-bindings">
+        <section class="sound-slot">
+          <div class="sound-slot-title">
+            <div>
+              <span class="eyebrow">CLASS // ENTRY</span>
+              <h3>上课铃</h3>
+            </div>
+            <span class="sound-event-tag">START</span>
+          </div>
+          <div id="classStartSoundName" class="sound-file-name">NOT CONFIGURED</div>
+          <div class="sound-slot-actions">
+            <label class="btn file-btn">IMPORT AUDIO<input id="classStartSoundInput" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" /></label>
+            <button type="button" id="previewClassStartBtn" class="btn">PREVIEW</button>
+            <button type="button" id="clearClassStartBtn" class="btn btn-danger-outline">CLEAR</button>
+          </div>
+        </section>
+
+        <section class="sound-slot">
+          <div class="sound-slot-title">
+            <div>
+              <span class="eyebrow">CLASS // EXIT</span>
+              <h3>下课铃</h3>
+            </div>
+            <span class="sound-event-tag">END</span>
+          </div>
+          <div id="classEndSoundName" class="sound-file-name">NOT CONFIGURED</div>
+          <div class="sound-slot-actions">
+            <label class="btn file-btn">IMPORT AUDIO<input id="classEndSoundInput" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" /></label>
+            <button type="button" id="previewClassEndBtn" class="btn">PREVIEW</button>
+            <button type="button" id="clearClassEndBtn" class="btn btn-danger-outline">CLEAR</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="soundMessage" class="message-box" hidden></div>
+    </form>
+  </dialog>
+
+  <dialog id="simulateDialog" class="modal">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">TEST CLOCK</div>
+          <h2>模拟时间</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <p class="modal-copy">模拟时间只在当前页面会话中有效，不会写入你的长期设置。启动后时钟会从所选时间继续正常向前走。</p>
+
+      <label class="field">
+        <span>从这个时间开始</span>
+        <input id="simulationTimeInput" type="time" step="1" />
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn" value="cancel">CANCEL</button>
+        <button type="button" id="startSimulationBtn" class="btn btn-primary">START SIMULATION</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="scheduleRowTemplate">
+    <div class="schedule-row">
+      <input class="row-start" type="time" required />
+      <input class="row-end" type="time" required />
+      <input class="row-name" type="text" maxlength="80" placeholder="任务名称" required />
+      <select class="row-category">
+        <option value="class">课程 CLASS</option>
+        <option value="break">课间 BREAK</option>
+        <option value="meal">用餐 MEAL</option>
+        <option value="routine">日常 ROUTINE</option>
+        <option value="rest">休息 REST</option>
+        <option value="custom">其他 CUSTOM</option>
+      </select>
+      <button type="button" class="row-delete icon-btn" aria-label="删除">×</button>
+    </div>
+  </template>
+
+  <template id="todayRowTemplate">
+    <div class="today-row">
+      <input class="row-start" type="time" required />
+      <input class="row-end" type="time" required />
+      <input class="row-name" type="text" maxlength="80" placeholder="任务名称" required />
+      <select class="row-category">
+        <option value="class">课程 CLASS</option>
+        <option value="break">课间 BREAK</option>
+        <option value="meal">用餐 MEAL</option>
+        <option value="routine">日常 ROUTINE</option>
+        <option value="rest">休息 REST</option>
+        <option value="custom">其他 CUSTOM</option>
+      </select>
+      <button type="button" class="today-skip btn btn-danger-outline">SKIP</button>
+    </div>
+  </template>
+
+  <script src="app.js?v=0.3.0"></script>
+</body>
+</html>

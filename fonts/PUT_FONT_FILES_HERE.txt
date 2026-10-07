@@ -1,0 +1,9 @@
+TEMPO-7 v0.1.3 expects these four files in this folder:
+
+HarmonyOS_Sans_Regular.ttf
+HarmonyOS_Sans_Medium.ttf
+HarmonyOS_Sans_Bold.ttf
+HarmonyOS_Sans_Black.ttf
+
+Copy them from your own HarmonyOS Sans package.
+Italic / Thin / Light files are not required by v0.1.3.
