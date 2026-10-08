@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.3.0';
+  const APP_VERSION = '0.4.0';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -90,7 +90,7 @@
     progressFill: $('progressFill'), progressPercent: $('progressPercent'), progressLabel: $('progressLabel'),
     nextTaskName: $('nextTaskName'), nextTaskRange: $('nextTaskRange'), nextTaskCategory: $('nextTaskCategory'),
     nextStartsIn: $('nextStartsIn'), scheduleList: $('scheduleList'), dayProgress: $('dayProgress'), systemDate: $('systemDate'),
-    activeTemplateSelect: $('activeTemplateSelect'), startTodayBtn: $('startTodayBtn'), todayBtn: $('todayBtn'),
+    activeTemplateSelect: $('activeTemplateSelect'), startTodayBtn: $('startTodayBtn'), installAppBtn: $('installAppBtn'), todayBtn: $('todayBtn'),
     editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), simulateBtn: $('simulateBtn'),
     scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), simulateDialog: $('simulateDialog'),
     editorTemplateSelect: $('editorTemplateSelect'), templateNameInput: $('templateNameInput'), scheduleRows: $('scheduleRows'),
@@ -117,6 +117,10 @@
   let todayEditorContext = null;
   let simulation = null;
   let lastStateKey = null;
+
+  // PWA install prompt is supplied by Chromium when the app meets installability
+  // requirements. We keep it only for the current page session.
+  let deferredInstallPrompt = null;
 
   const soundRuntime = {
     audioContext: null,
@@ -1281,6 +1285,55 @@
     render();
   }
 
+  function isStandaloneMode() {
+    return window.matchMedia?.('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+  }
+
+  function refreshInstallButton() {
+    if (!els.installAppBtn) return;
+    els.installAppBtn.hidden = isStandaloneMode() || !deferredInstallPrompt;
+  }
+
+  async function installTempo7() {
+    if (!deferredInstallPrompt) return;
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    refreshInstallButton();
+
+    try {
+      await promptEvent.prompt();
+      await promptEvent.userChoice;
+    } catch (err) {
+      console.warn('TEMPO-7 install prompt failed:', err);
+    } finally {
+      refreshInstallButton();
+    }
+  }
+
+  function bindPwaEvents() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      refreshInstallButton();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      refreshInstallButton();
+    });
+
+    window.matchMedia?.('(display-mode: standalone)').addEventListener?.('change', refreshInstallButton);
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./service-worker.js', { updateViaCache: 'none' })
+          .catch((err) => console.warn('TEMPO-7 service worker registration failed:', err));
+      });
+    }
+  }
+
   function bindEvents() {
     els.activeTemplateSelect.addEventListener('change', () => {
       settings.activeTemplateId = els.activeTemplateSelect.value;
@@ -1293,6 +1346,7 @@
     });
 
     els.startTodayBtn.addEventListener('click', startToday);
+    els.installAppBtn?.addEventListener('click', installTempo7);
     els.todayBtn.addEventListener('click', () => {
       renderTodayEditor();
       els.todayDialog.showModal();
@@ -1388,8 +1442,10 @@
 
   function init() {
     refreshTemplateSelects();
+    bindPwaEvents();
     bindEvents();
     refreshSoundUi();
+    refreshInstallButton();
     resetSoundEventCursor();
     render();
     setInterval(render, 250);

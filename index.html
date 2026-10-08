@@ -4,8 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#17191c" />
+  <meta name="application-name" content="TEMPO-7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TEMPO-7" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" href="favicon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.3.0" />
+  <link rel="stylesheet" href="style.css?v=0.4.0" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -13,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.3.0</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.4.0</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -22,6 +30,7 @@
         <select id="activeTemplateSelect" aria-label="当前日程模板"></select>
       </label>
       <button id="startTodayBtn" class="btn btn-primary">START TODAY</button>
+      <button id="installAppBtn" class="btn" hidden>INSTALL</button>
       <button id="todayBtn" class="btn">TODAY</button>
       <button id="editScheduleBtn" class="btn">EDIT</button>
       <button id="dataBtn" class="btn">DATA</button>
@@ -182,7 +191,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.3.0 会把模板、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.4.0 会把模板、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
 
       <div class="data-actions">
         <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT JSON</button>
@@ -313,6 +322,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.3.0"></script>
+  <script src="app.js?v=0.4.0"></script>
 </body>
 </html>
