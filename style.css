@@ -1,9 +1,28 @@
 /*
   TEMPO-7 typography
-  Latin / numerals: Windows Bahnschrift at weight 600 (SemiBold)
+  Latin / numerals: bundled DINish — SemiBold (600) for UI, Bold (700) for countdown.
   Chinese: bundled Source Han Sans CN Heavy, aliased to weight 600 so mixed-script
   text can use one CSS weight while each script keeps the intended face.
+
+  DINish is self-hosted from ./fonts and licensed under SIL Open Font License 1.1.
+  See fonts/DINish-OFL.txt.
 */
+@font-face {
+  font-family: "TEMPO DINish";
+  src: url("fonts/DINish-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TEMPO DINish";
+  src: url("fonts/DINish-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "TEMPO Source Han Heavy";
   src: url("fonts/SourceHanSansCN-Heavy.otf") format("opentype");
@@ -26,9 +45,9 @@
   --accent-ink: #141516;
   --danger: #e25b5b;
   --shadow: 0 18px 70px rgba(0,0,0,.28);
-  --font-ui: "Bahnschrift", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
-  --font-display: "Bahnschrift", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
-  --font-mono: "Bahnschrift", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
+  --font-ui: "TEMPO DINish", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
+  --font-display: "TEMPO DINish", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
+  --font-mono: "TEMPO DINish", "TEMPO Source Han Heavy", "Microsoft YaHei", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -145,7 +164,7 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .countdown-wrap { align-self: center; text-align: center; }
 .countdown {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 700;
   font-size: clamp(108px, 18vw, 270px);
   line-height: .84;
   letter-spacing: -.045em;
@@ -246,7 +265,7 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
   .right-actions { justify-content: flex-end; }
 }
 
-/* v0.6.0 — appearance system */
+/* v0.6.0+ — appearance system */
 html[data-transition="none"] .hero { transition: none; }
 
 .appearance-grid {

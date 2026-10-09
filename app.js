@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.6.0';
+  const APP_VERSION = '0.7.0';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',

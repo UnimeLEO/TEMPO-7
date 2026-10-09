@@ -1,26 +1,21 @@
-# TEMPO-7 v0.6.0 — APPEARANCE SYSTEM
+# TEMPO-7 v0.7.0 — SELF-HOSTED DINish TYPOGRAPHY
 
-TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、PWA 安装和离线使用。
+TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装和离线使用。
 
-v0.6.0 的重点是把界面外观从“写死在 CSS 里”升级为可保存、可备份、可实时预览的外观系统，同时移除开发期使用的模拟时间功能。
+v0.7.0 的重点是完成英文 / 数字字体的可分发化：不再依赖 Windows 本机 Bahnschrift，改为由项目 `fonts/` 目录自托管开源 DINish，并让 PWA 离线缓存字体资源。主倒计时单独使用 DINish Bold，其余英文与数字界面使用 DINish SemiBold。
 
-## v0.6.0 新增与调整
+## v0.7.0 新增与调整
 
-- **APPEARANCE / LOOK 外观系统**：顶栏新增 `LOOK`，可直接调整界面配色。
-- **界面底色可配置**：可修改 APP BACKGROUND、TOP BAR、PANEL、ALT PANEL、LINE、TEXT、MUTED TEXT。
-- **任务状态色可配置**：可分别修改 CLASS、BREAK、MEAL、ROUTINE、REST、CUSTOM、FREE、END 的主色。
-- **自动文字对比色**：状态色变化后，TEMPO-7 会根据背景明度自动选择深色或浅色前景文字。
-- **状态切换效果可选**：
-  - `FLASH`：保留全屏瞬时闪烁 + 主区域平滑换色；
-  - `SOFT`：只进行主区域平滑换色；
-  - `NONE`：关闭状态切换动画。
-- **实时外观预览**：在 LOOK 中改色会即时显示在主界面；只有点击 `SAVE APPEARANCE` 才长期保存，取消会恢复已保存外观。
-- **RESET DEFAULTS**：可一键恢复 TEMPO-7 默认工业风配色，再决定是否保存。
-- **JSON 备份升级**：外观设置现在随模板、WEEK PLAN、铃声设置和 TODAY OVERRIDE 一并导入/导出。
-- **移除 SIM TIME / 模拟时间**：测试阶段结束后不再提供模拟时钟，运行界面始终以设备真实时间为准，避免破坏沉浸感与表面效度。
-- **倒计时视觉强化**：桌面端主倒计时最小字号由 92px 提升至 **108px**，自适应上限提升至 270px；字距由 `-0.075em` 调整为 **`-0.045em`**，数字更舒展。
-- **CSS 清理**：修复 v0.5.0 追加样式中的转义换行残留，使 WEEK PLAN 样式完整进入正常 CSS 解析链。
-- 原有 PWA、离线 App Shell、铃声、TODAY Override、WEEK PLAN、SCHEDULE 自动巡航等功能保持不变。
+- **Bahnschrift → DINish**：英文与数字默认字体更换为开源 DINish。
+- **项目字体优先**：CSS 优先加载 GitHub 仓库 `fonts/` 中的 DINish，不再以操作系统是否安装 Bahnschrift 为前提。
+- **DINish SemiBold / 600**：TEMPO-7 的英文标签、时间、普通数字与界面文字使用 `DINish-SemiBold.ttf`。
+- **DINish Bold / 700**：中央主倒计时单独使用 `DINish-Bold.ttf`，与普通界面数字建立更清楚的层级。
+- **中文保持不变**：中文继续使用项目内 `SourceHanSansCN-Heavy.otf`。
+- **混排自动回退**：同一段文本中，拉丁字母与数字优先由 DINish 渲染；DINish 不包含的中文字形自动回退到思源黑体。
+- **PWA 离线字体缓存**：Service Worker 的 App Shell 已加入 DINish SemiBold / Bold，安装版离线启动时仍可保持一致字形。
+- **字体许可随项目分发**：`fonts/DINish-OFL.txt` 随仓库保存。DINish 使用 SIL Open Font License 1.1，可作为 Web Font 自托管与随软件分发。
+- 版本号、HTML cache-busting 与 PWA cache 名称同步更新至 `0.7.0`。
+- v0.6.0 的 LOOK 外观系统、真实时间运行、108px 起始倒计时字号及 `-0.045em` 字距保持不变。
 
 ## 当前核心功能
 
@@ -31,9 +26,10 @@ v0.6.0 的重点是把界面外观从“写死在 CSS 里”升级为可保存�
 - CLASS 分类绑定上课铃 / 下课铃，可导入 MP3 / WAV，音频保存在 IndexedDB。
 - TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板。
 - WEEK PLAN：按周一至周日自动选择模板，也可设为 OFF / NO SCHEDULE。
+- LOOK：可配置界面底色、文字色、分类状态色及状态切换动画。
 - JSON 导入 / 导出：用于模板、周计划、设置、外观、TODAY Override 的备份与迁移。
 - PWA：可从 GitHub Pages 安装为独立窗口应用，并支持 App Shell 离线启动。
-- 中英文字体分流：英文和数字优先调用 Windows Bahnschrift；中文使用项目内思源黑体 Heavy。
+- 自托管字体：英文 / 数字使用 DINish，中文使用 Source Han Sans CN Heavy。
 
 ## 外观系统使用
 
@@ -78,7 +74,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.6.0"
+git commit -m "TEMPO-7 v0.7.0"
 git push
 ```
 
@@ -98,10 +94,24 @@ GitHub Pages 会随 `main` 分支更新。
 
 ## 字体
 
-- 英文 / 数字：优先调用 Windows 本机 `Bahnschrift`（SemiBold / 600）。
-- 中文：项目内 `fonts/SourceHanSansCN-Heavy.otf`。
+TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项目自身的 `fonts/` 目录加载，因此 GitHub Pages、PWA 与不同设备之间更容易保持一致视觉。
+
+- **英文 / 普通数字 / UI**：`fonts/DINish-SemiBold.ttf`，CSS weight `600`。
+- **主倒计时数字**：`fonts/DINish-Bold.ttf`，CSS weight `700`。
+- **中文**：`fonts/SourceHanSansCN-Heavy.otf`。
+- **DINish 许可**：SIL Open Font License 1.1；许可文本见 `fonts/DINish-OFL.txt`。
+- **DINish 上游项目**：`playbeing/dinish`。上游明确允许桌面、电子书及 Web Font 使用，并推荐网站自行托管字体文件。
+
+项目 CSS 中 DINish 排在字体栈首位；因此只要仓库字体资源加载成功，就不会再调用用户设备上的 Bahnschrift。中文因 DINish 无对应 CJK 字形而自然回退到项目内思源黑体。
 
 ## 版本记录
+
+### v0.7.0 — Self-hosted DINish Typography
+- 用开源 DINish 替换对 Windows Bahnschrift 的运行时依赖。
+- DINish SemiBold 用于英文、时间与普通数字；主倒计时单独使用 DINish Bold。
+- DINish 字体文件放入仓库 `fonts/` 并加入 PWA 离线缓存。
+- 随项目加入 DINish 的 SIL Open Font License 1.1 文本。
+- README 补充字体加载、分发和许可说明。
 
 ### v0.6.0 — Appearance System
 - 新增 LOOK 外观系统、界面底色与分类状态色自定义、切换动画模式。

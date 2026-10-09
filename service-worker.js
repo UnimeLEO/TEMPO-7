@@ -1,10 +1,10 @@
-const CACHE_NAME = 'tempo7-v0.6.0';
+const CACHE_NAME = 'tempo7-v0.7.0';
 
 const APP_SHELL = [
   './',
   './index.html',
-  './style.css?v=0.6.0',
-  './app.js?v=0.6.0',
+  './style.css?v=0.7.0',
+  './app.js?v=0.7.0',
   './manifest.webmanifest',
   './favicon.ico',
   './favicon.png',
@@ -12,7 +12,9 @@ const APP_SHELL = [
   './icons/icon-512.png',
   './icons/icon-512-maskable.png',
   './icons/apple-touch-icon.png',
-  './fonts/SourceHanSansCN-Heavy.otf'
+  './fonts/SourceHanSansCN-Heavy.otf',
+  './fonts/DINish-SemiBold.ttf',
+  './fonts/DINish-Bold.ttf'
 ];
 
 self.addEventListener('install', (event) => {
