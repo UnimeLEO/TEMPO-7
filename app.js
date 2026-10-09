@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.7.0';
+  const APP_VERSION = '0.7.1';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -160,6 +160,10 @@
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
     todayStatusLabel: $('todayStatusLabel'), todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
     addTodayTaskBtn: $('addTodayTaskBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
+    exportTodayBtn: $('exportTodayBtn'), openTodayTemplatePanelBtn: $('openTodayTemplatePanelBtn'),
+    todayTemplatePanel: $('todayTemplatePanel'), closeTodayTemplatePanelBtn: $('closeTodayTemplatePanelBtn'),
+    todayTemplateNameInput: $('todayTemplateNameInput'), saveTodayAsTemplateBtn: $('saveTodayAsTemplateBtn'),
+    saveTodayApplyBtn: $('saveTodayApplyBtn'), saveTodayWeekBtn: $('saveTodayWeekBtn'), saveTodayWeekWrap: $('saveTodayWeekWrap'),
     weekPlanEnabledInput: $('weekPlanEnabledInput'), weekPlanRows: $('weekPlanRows'), weekPlanMessage: $('weekPlanMessage'), saveWeekPlanBtn: $('saveWeekPlanBtn')
   };
 
@@ -1080,8 +1084,8 @@
   function renderTodayIndicator(now = getNow()) {
     const source = getScheduleSource(now);
     els.todayModeBadge.hidden = !source.modified;
-    els.todayBtn.classList.toggle('today-modified', source.modified);
-    els.todayBtn.textContent = source.modified ? 'TODAY*' : 'TODAY';
+    els.todayBtn.classList.toggle('status-enabled', source.modified);
+    els.todayBtn.textContent = 'TODAY';
     els.todayBtn.title = source.modified ? '今天存在临时修改' : '编辑今天的运行日程';
   }
 
@@ -1216,8 +1220,8 @@
       lastTemplateUiKey = key;
       refreshTemplateSelects(now);
     }
-    els.weekPlanBtn.textContent = settings.weekPlan?.enabled ? 'WEEK*' : 'WEEK';
-    els.weekPlanBtn.classList.toggle('week-enabled', !!settings.weekPlan?.enabled);
+    els.weekPlanBtn.textContent = 'WEEK';
+    els.weekPlanBtn.classList.toggle('status-enabled', !!settings.weekPlan?.enabled);
     els.weekPlanBtn.title = settings.weekPlan?.enabled
       ? `自动周计划已启用 // 今日：${effective.name}`
       : '配置每周自动模板';
@@ -1408,6 +1412,8 @@
     renderTodayEmptyState();
     hideTodayError();
     els.todayMessage.hidden = true;
+    closeTodayTemplatePanel();
+    refreshTodayTemplateWeekAction();
   }
 
   function addTodayRow(task = { start: '', end: '', name: '', category: 'custom' }) {
@@ -1462,6 +1468,153 @@
     els.todayMessage.hidden = false;
   }
 
+  function refreshTodayTemplateWeekAction() {
+    const enabled = !!settings.weekPlan?.enabled;
+    els.saveTodayWeekBtn.disabled = !enabled;
+    if (enabled) {
+      els.saveTodayWeekWrap.removeAttribute('data-tooltip');
+      els.saveTodayWeekWrap.removeAttribute('title');
+    } else {
+      els.saveTodayWeekWrap.dataset.tooltip = 'WEEK is not enabled';
+      els.saveTodayWeekWrap.title = 'WEEK is not enabled';
+    }
+  }
+
+  function closeTodayTemplatePanel() {
+    els.todayTemplatePanel.hidden = true;
+    els.todayTemplateNameInput.value = '';
+  }
+
+  function getValidatedTodayEditorTasks({ allowEmpty = true } = {}) {
+    if (!todayEditorContext) {
+      showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+      return null;
+    }
+    const tasks = collectTodayTasks();
+    const error = validateTasks(tasks, { allowEmpty });
+    if (error) {
+      showTodayError(error);
+      return null;
+    }
+    tasks.sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
+    return tasks;
+  }
+
+  function openTodayTemplatePanel() {
+    const tasks = getValidatedTodayEditorTasks({ allowEmpty: false });
+    if (!tasks) return;
+    const base = getTemplateById(todayEditorContext.templateId);
+    const fallbackName = base && base.id !== OFF_TEMPLATE_ID
+      ? `${base.name} - ${todayEditorContext.date}`
+      : `TODAY - ${todayEditorContext.date}`;
+    els.todayTemplateNameInput.value = '';
+    els.todayTemplateNameInput.placeholder = fallbackName;
+    els.todayTemplatePanel.hidden = false;
+    refreshTodayTemplateWeekAction();
+    requestAnimationFrame(() => els.todayTemplateNameInput.focus());
+  }
+
+  function createTemplateFromToday(name, tasks) {
+    const template = {
+      id: makeId('template'),
+      name,
+      tasks: tasks.map(task => ({ ...task, id: makeId('task') }))
+    };
+    templates.push(template);
+    return template;
+  }
+
+  function saveTodayAsTemplate(mode) {
+    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (mode === 'week' && !settings.weekPlan?.enabled) {
+      refreshTodayTemplateWeekAction();
+      return;
+    }
+
+    const name = els.todayTemplateNameInput.value.trim();
+    if (!name) {
+      showTodayError('请填写模板名称。');
+      els.todayTemplateNameInput.focus();
+      return;
+    }
+
+    const tasks = getValidatedTodayEditorTasks({ allowEmpty: false });
+    if (!tasks) return;
+
+    const date = todayEditorContext.date;
+    const originalTemplateId = todayEditorContext.templateId;
+    const originalTemplate = getTemplateById(originalTemplateId);
+    if (!originalTemplate) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
+
+    const created = createTemplateFromToday(name, tasks);
+
+    if (mode === 'today') {
+      if (tasksEquivalent(created.tasks, originalTemplate.tasks)) {
+        clearDailyOverride(date, originalTemplateId);
+      } else {
+        setDailyOverride(date, originalTemplateId, created.tasks);
+      }
+    } else if (mode === 'week') {
+      const todayKey = String(getNow().getDay());
+      settings.weekPlan.days[todayKey] = created.id;
+      clearDailyOverride(date, originalTemplateId);
+    }
+
+    saveAll();
+    lastTemplateUiKey = null;
+    refreshTemplateSelects();
+    closeTodayTemplatePanel();
+
+    if (mode === 'save') {
+      showTodayMessage(`模板“${created.name}”已保存；TODAY 与 WEEK PLAN 未改变。`);
+      return;
+    }
+
+    refreshAfterTodayChange();
+    renderTodayEditor();
+    if (mode === 'week') {
+      showTodayMessage(`模板“${created.name}”已保存，并已替换 WEEK PLAN 中今天的模板。`);
+    } else {
+      showTodayMessage(`模板“${created.name}”已保存，并仅应用到今天；WEEK PLAN 未改变。`);
+    }
+  }
+
+  function exportTodayJson() {
+    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    const tasks = getValidatedTodayEditorTasks({ allowEmpty: true });
+    if (!tasks) return;
+    const base = getTemplateById(todayEditorContext.templateId);
+    if (!base) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
+
+    const dayKey = String(getNow().getDay());
+    const payload = {
+      app: 'TEMPO-7',
+      appVersion: APP_VERSION,
+      schemaVersion: 1,
+      exportType: 'today',
+      exportedAt: new Date().toISOString(),
+      date: todayEditorContext.date,
+      baseTemplate: { id: base.id, name: base.name },
+      weekPlan: {
+        enabled: !!settings.weekPlan?.enabled,
+        weekday: dayKey,
+        mappedTemplateId: settings.weekPlan?.days?.[dayKey] || null
+      },
+      tasks
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `TEMPO-7-today-${todayEditorContext.date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showTodayMessage(`TODAY 已导出：TEMPO-7-today-${todayEditorContext.date}.json`);
+  }
+
   function refreshAfterTodayChange() {
     lastStateKey = null;
     scheduleCruise.renderKey = null;
@@ -1475,10 +1628,8 @@
     const template = getTemplateById(todayEditorContext.templateId);
     if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
 
-    const tasks = collectTodayTasks();
-    const error = validateTasks(tasks, { allowEmpty: true });
-    if (error) return showTodayError(error);
-    tasks.sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
+    const tasks = getValidatedTodayEditorTasks({ allowEmpty: true });
+    if (!tasks) return;
 
     if (tasksEquivalent(tasks, template.tasks)) {
       clearDailyOverride(todayEditorContext.date, template.id);
@@ -1516,17 +1667,17 @@
   function renderRunButton() {
     const running = isTodayRunning();
     const needsUnlock = running && settings.sound.enabled && !soundRuntime.unlocked;
-    els.startTodayBtn.textContent = !running ? 'START TODAY' : (needsUnlock ? 'ENABLE SOUND' : 'TODAY RUNNING');
-    els.startTodayBtn.classList.toggle('btn-primary', !running || needsUnlock);
-    if (running && !needsUnlock) {
-      els.startTodayBtn.style.borderColor = '#426e59';
-      els.startTodayBtn.style.color = '#9fe0bd';
-      els.startTodayBtn.style.background = '#17241d';
+    if (!running) {
+      els.startTodayBtn.textContent = 'START TODAY';
+    } else if (needsUnlock) {
+      els.startTodayBtn.textContent = 'ENABLE SOUND';
+    } else if (settings.sound.enabled) {
+      els.startTodayBtn.textContent = 'AUDIO ENABLED';
     } else {
-      els.startTodayBtn.style.removeProperty('border-color');
-      els.startTodayBtn.style.removeProperty('color');
-      els.startTodayBtn.style.removeProperty('background');
+      els.startTodayBtn.textContent = 'TODAY RUNNING';
     }
+    els.startTodayBtn.classList.toggle('btn-primary', !running || needsUnlock);
+    els.startTodayBtn.classList.toggle('status-enabled', running && !needsUnlock);
   }
 
   async function startToday() {
@@ -1781,6 +1932,12 @@
     });
     els.saveTodayBtn.addEventListener('click', saveTodayOverride);
     els.resetTodayBtn.addEventListener('click', resetTodayOverride);
+    els.exportTodayBtn.addEventListener('click', exportTodayJson);
+    els.openTodayTemplatePanelBtn.addEventListener('click', openTodayTemplatePanel);
+    els.closeTodayTemplatePanelBtn.addEventListener('click', closeTodayTemplatePanel);
+    els.saveTodayAsTemplateBtn.addEventListener('click', () => saveTodayAsTemplate('save'));
+    els.saveTodayApplyBtn.addEventListener('click', () => saveTodayAsTemplate('today'));
+    els.saveTodayWeekBtn.addEventListener('click', () => saveTodayAsTemplate('week'));
 
     els.exportJsonBtn.addEventListener('click', exportJson);
     els.importJsonInput.addEventListener('change', () => {

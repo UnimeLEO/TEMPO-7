@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.7.0-full" />
+  <link rel="stylesheet" href="style.css?v=0.7.1" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -21,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.0</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.1</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -165,10 +165,33 @@
       <div id="todayError" class="error-box" hidden></div>
       <div id="todayMessage" class="message-box success" hidden></div>
 
+      <section id="todayTemplatePanel" class="today-template-panel" hidden>
+        <div class="today-template-panel-head">
+          <div>
+            <div class="eyebrow">SAVE TODAY AS TEMPLATE</div>
+            <h3>储存为模板</h3>
+          </div>
+          <button type="button" id="closeTodayTemplatePanelBtn" class="icon-btn" aria-label="关闭储存为模板面板">×</button>
+        </div>
+        <label class="field">
+          <span>TEMPLATE NAME</span>
+          <input id="todayTemplateNameInput" type="text" maxlength="60" autocomplete="off" />
+        </label>
+        <div class="today-template-actions">
+          <button type="button" id="saveTodayAsTemplateBtn" class="btn">SAVE</button>
+          <button type="button" id="saveTodayApplyBtn" class="btn btn-primary">SAVE &amp; APPLY TO TODAY</button>
+          <span id="saveTodayWeekWrap" class="button-tooltip">
+            <button type="button" id="saveTodayWeekBtn" class="btn">SAVE &amp; APPLY TO WEEK PLAN</button>
+          </span>
+        </div>
+      </section>
+
       <div class="modal-actions split-actions">
         <div class="left-actions">
           <button type="button" id="addTodayTaskBtn" class="btn">+ ADD TASK</button>
           <button type="button" id="resetTodayBtn" class="btn btn-danger-outline">RESET TODAY</button>
+          <button type="button" id="exportTodayBtn" class="btn">EXPORT TODAY JSON</button>
+          <button type="button" id="openTodayTemplatePanelBtn" class="btn">SAVE AS TEMPLATE</button>
         </div>
         <div class="right-actions">
           <button class="btn" value="cancel">CANCEL</button>
@@ -215,7 +238,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.0 的 FULL BACKUP 会把模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.1 的 FULL BACKUP 会把模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
       <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE SOUND / START TODAY 以重新激活声音。</p>
 
       <div class="data-actions">
@@ -391,6 +414,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.7.0-full"></script>
+  <script src="app.js?v=0.7.1"></script>
 </body>
 </html>

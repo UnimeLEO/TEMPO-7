@@ -1,10 +1,23 @@
-# TEMPO-7 v0.7.0 — COMPLETE BACKUP + SELF-HOSTED DINish TYPOGRAPHY
+# TEMPO-7 v0.7.1 — INTERACTION REFINEMENT
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装和离线使用。
 
-v0.7.0 的核心更新是 **完整备份 / 一键恢复**：除模板、WEEK PLAN、外观、铃声设置和 TODAY Override 外，已导入的 MP3 / WAV 铃声音频本体也会从 IndexedDB 读取并写入单个 JSON 备份文件，换设备或换浏览器后可以一次恢复。
+v0.7.1 是一轮以 **交互细节与 TODAY 工作流** 为核心的小版本更新：音频、TODAY 与 WEEK 的运行状态统一使用绿色状态指示；TODAY 可以把当前编辑内容直接导出为独立 JSON，也可以另存为长期模板，并明确区分“只保存”“只应用到今天”“写入 WEEK PLAN”三种行为。
 
-同时完成英文 / 数字字体的可分发化：不再依赖 Windows 本机 Bahnschrift，改为由项目 `fonts/` 目录自托管开源 DINish，并让 PWA 离线缓存字体资源。主倒计时单独使用 DINish Bold，其余英文与数字界面使用 DINish SemiBold。
+v0.7.0 引入的完整备份与自托管 DINish 字体体系保持不变：FULL BACKUP 仍可一次迁移模板、WEEK PLAN、TODAY Override、外观、铃声设置与 IndexedDB 中的 MP3 / WAV 音频本体。
+
+## v0.7.1 新增与调整
+
+- **AUDIO ENABLED**：完成浏览器音频解锁后，顶部运行按钮显示 `AUDIO ENABLED`；绿色状态样式保持为统一的“已启用”视觉。
+- **TODAY 状态改为绿色**：存在 TODAY Override 时，`TODAY` 按钮使用与 AUDIO 激活后相同的绿色状态样式，不再通过 `TODAY*` 星号提示。
+- **WEEK 状态改为绿色**：启用 WEEK PLAN 后，`WEEK` 按钮同样使用绿色状态样式，不再显示 `WEEK*`。
+- **EXPORT TODAY JSON**：TODAY 编辑器可把当前编辑内容（包括尚未点击 SAVE TODAY 的修改）导出为 `TEMPO-7-today-YYYY-MM-DD.json`。这是独立的单日数据导出，不等同于 FULL BACKUP。
+- **SAVE AS TEMPLATE**：TODAY 当前内容可直接创建为新的长期模板，并要求输入模板名。
+- **SAVE**：只创建模板，不应用到今天，也不修改 WEEK PLAN。
+- **SAVE & APPLY TO TODAY**：创建模板，并把当前内容作为今天的运行日程；无论 WEEK PLAN 是否开启，都不会修改星期映射。
+- **SAVE & APPLY TO WEEK PLAN**：仅在 WEEK PLAN 已启用时可用；创建模板、立即应用到今天，并把 WEEK PLAN 中“今天对应的星期”改绑到新模板。
+- **WEEK 未启用提示**：第三个按钮在 WEEK PLAN 关闭时为灰色不可用，悬停显示 `WEEK is not enabled`。
+- v0.7.0 的 FULL BACKUP、DINish 字体、PWA 与离线能力保持不变。
 
 ## v0.7.0 新增与调整
 
@@ -29,8 +42,8 @@ v0.7.0 的核心更新是 **完整备份 / 一键恢复**：除模板、WEEK PLA
 - 主倒计时使用真实系统时间计算，不依赖逐秒递减，因此浏览器短暂降频后仍可自动校准。
 - SCHEDULE 慢速自动巡航；悬停暂停；手动滚动后延迟恢复；到底后平滑回顶。
 - CLASS 分类绑定上课铃 / 下课铃，可导入 MP3 / WAV，音频保存在 IndexedDB。
-- TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板。
-- WEEK PLAN：按周一至周日自动选择模板，也可设为 OFF / NO SCHEDULE。
+- TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板；可导出单日 JSON，并可把当前 TODAY 内容另存为长期模板。
+- WEEK PLAN：按周一至周日自动选择模板，也可设为 OFF / NO SCHEDULE；启用状态以绿色按钮显示。
 - LOOK：可配置界面底色、文字色、分类状态色及状态切换动画。
 - FULL BACKUP 导入 / 导出：模板、周计划、设置、外观、TODAY Override 与 MP3 / WAV 铃声音频可在一个 JSON 中完整迁移。
 - PWA：可从 GitHub Pages 安装为独立窗口应用，并支持 App Shell 离线启动。
@@ -55,7 +68,22 @@ v0.7.0 的核心更新是 **完整备份 / 一键恢复**：除模板、WEEK PLA
 2. 为 MON–SUN 分别选择模板或 `OFF / NO SCHEDULE`；
 3. 点击 `SAVE WEEK PLAN`。
 
-启用后，顶栏 `TEMPLATE` 会锁定到当天由周计划选择的模板。`TODAY` 仍优先于基础模板，只修改当天。
+启用后，顶栏 `TEMPLATE` 会锁定到当天由周计划选择的模板，`WEEK` 按钮变为绿色。`TODAY` 仍优先于基础模板，只修改当天。
+
+## TODAY：单日导出与储存为模板
+
+点击顶栏 `TODAY` 后，除了原有的 `ADD TASK`、`RESET TODAY` 和 `SAVE TODAY`，v0.7.1 还提供：
+
+- `EXPORT TODAY JSON`：把编辑器中当前看到的单日日程导出为独立 JSON；不会改变本地日程状态。
+- `SAVE AS TEMPLATE`：打开模板储存面板并要求输入新模板名。
+
+储存为模板时有三种行为：
+
+1. `SAVE`：仅创建新模板；不提交当前尚未保存的 TODAY 修改，也不影响 WEEK PLAN。
+2. `SAVE & APPLY TO TODAY`：创建新模板，并把这份日程仅应用到今天。若 WEEK PLAN 已启用，其星期映射保持原样。
+3. `SAVE & APPLY TO WEEK PLAN`：仅在 WEEK PLAN 已启用时可用；创建新模板、立即应用到今天，并把当前星期在 WEEK PLAN 中改绑到新模板。WEEK 关闭时该按钮灰显，悬停提示 `WEEK is not enabled`。
+
+当 TODAY Override 实际生效时，顶部 `TODAY` 按钮使用与 `AUDIO ENABLED` 相同的绿色状态，而不再添加星号。
 
 ## 完整备份与恢复
 
@@ -93,7 +121,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.7.0"
+git commit -m "TEMPO-7 v0.7.1"
 git push
 ```
 
@@ -123,7 +151,23 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 
 项目 CSS 中 DINish 排在字体栈首位；因此只要仓库字体资源加载成功，就不会再调用用户设备上的 Bahnschrift。中文因 DINish 无对应 CJK 字形而自然回退到项目内思源黑体。
 
+
+## v0.7.2 前瞻
+
+计划中的下一轮小版本：
+
+- TODAY 支持 `ADD NEW TYPE`，最多新增 10 个自定义分类；
+- 铃声系统扩展为所有 TYPE 均可配置自定义铃声，包括用户自定义分类；
+- STATE TRANSITION 扩展为更复杂的状态过渡动画，具体视觉方案待定。
+
 ## 版本记录
+
+### v0.7.1 — Interaction Refinement
+- 音频完成激活后顶部按钮显示 `AUDIO ENABLED`。
+- TODAY Override 与 WEEK PLAN 的启用状态统一改为绿色按钮，不再使用星号。
+- TODAY 支持导出独立单日 JSON。
+- TODAY 支持另存为长期模板，并提供 `SAVE`、`SAVE & APPLY TO TODAY`、`SAVE & APPLY TO WEEK PLAN` 三种明确行为。
+- WEEK 关闭时，应用到 WEEK PLAN 的按钮不可用，并提供悬停提示。
 
 ### v0.7.0 — Complete Backup + Self-hosted DINish Typography
 - 完整备份 schema 升级至 v5，MP3 / WAV 音频本体与配置一并导出。
