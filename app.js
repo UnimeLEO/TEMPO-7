@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.7.1';
+  const APP_VERSION = '0.7.2';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -105,7 +105,9 @@
     renderKey: null,
     // Keep our own floating-point position. Some browsers quantize scrollTop,
     // so adding a sub-pixel delta to scrollTop every frame can appear stuck.
-    position: 0
+    position: 0,
+    rafId: null,
+    wakeTimerId: null
   };
 
   const DEFAULT_TEMPLATE = {
@@ -176,6 +178,10 @@
   let appearanceSavedThisOpen = false;
   let lastStateKey = null;
   let lastTemplateUiKey = null;
+  let lastRuntimeRenderKey = null;
+  let runtimeTimerId = null;
+  let runState = loadRunState();
+  const runtimeScheduleCache = { tasksRef: null, sortedTasks: [] };
 
   // PWA install prompt is supplied by Chromium when the app meets installability
   // requirements. We keep it only for the current page session.
@@ -185,7 +191,11 @@
     audioContext: null,
     unlocked: false,
     buffers: new Map(),
-    lastObserved: null
+    lastObserved: null,
+    eventCacheKey: null,
+    eventCache: [],
+    triggerLogDate: null,
+    triggerLog: null
   };
 
   function deepClone(value) {
@@ -787,6 +797,8 @@
 
 
   function getSoundEvents(schedule) {
+    if (soundRuntime.eventCacheKey === schedule.scheduleKey) return soundRuntime.eventCache;
+
     const events = [];
     for (const task of schedule.tasks) {
       const binding = settings.sound.bindings?.[task.category];
@@ -809,24 +821,34 @@
         });
       }
     }
-    return events.sort((a, b) => a.timeSec - b.timeSec);
+    soundRuntime.eventCacheKey = schedule.scheduleKey;
+    soundRuntime.eventCache = events.sort((a, b) => a.timeSec - b.timeSec);
+    return soundRuntime.eventCache;
   }
 
   function loadRealTriggerLog(date) {
+    if (soundRuntime.triggerLogDate === date && soundRuntime.triggerLog) return soundRuntime.triggerLog;
+    let log = new Set();
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.soundTriggerLog)) || {};
-      if (parsed.date === date && Array.isArray(parsed.keys)) return new Set(parsed.keys);
+      if (parsed.date === date && Array.isArray(parsed.keys)) log = new Set(parsed.keys);
     } catch (_) {}
-    return new Set();
+    soundRuntime.triggerLogDate = date;
+    soundRuntime.triggerLog = log;
+    return log;
   }
 
   function saveRealTriggerLog(date, set) {
+    soundRuntime.triggerLogDate = date;
+    soundRuntime.triggerLog = set;
     localStorage.setItem(STORAGE_KEYS.soundTriggerLog, JSON.stringify({ date, keys: [...set] }));
   }
 
   function resetSoundEventCursor() {
     const now = getNow();
     const source = getScheduleSource(now);
+    soundRuntime.eventCacheKey = null;
+    soundRuntime.eventCache = [];
     soundRuntime.lastObserved = {
       date: formatDate(now),
       sec: getSecondsOfDay(now),
@@ -882,7 +904,11 @@
 
   function getScheduleState(now = getNow()) {
     const source = getScheduleSource(now);
-    const tasks = [...source.tasks].sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
+    if (runtimeScheduleCache.tasksRef !== source.tasks) {
+      runtimeScheduleCache.tasksRef = source.tasks;
+      runtimeScheduleCache.sortedTasks = [...source.tasks].sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
+    }
+    const tasks = runtimeScheduleCache.sortedTasks;
     const sec = getSecondsOfDay(now);
 
     if (!tasks.length) {
@@ -949,29 +975,36 @@
     els.transitionFlash.classList.add('flash');
   }
 
-  function render() {
-    const now = getNow();
-    const sec = getSecondsOfDay(now);
-    const state = getScheduleState(now);
-    processSoundEvents(now);
+  function setTextIfChanged(element, value) {
+    if (element.textContent !== value) element.textContent = value;
+  }
 
-    els.systemDate.textContent = `${formatDate(now)} ${formatClock(now)}`;
+  function getRuntimeStateDescriptor(state, now) {
+    const taskKey = state.mode === 'task'
+      ? (state.task.id || `${state.task.start}:${state.task.end}:${state.task.name}:${state.task.category}`)
+      : `${state.stateStart}:${state.stateEnd}`;
+    return `${formatDate(now)}|${state.source.scheduleKey}|${state.mode}|${taskKey}`;
+  }
 
+  function getVisualStateDescriptor(state) {
+    if (state.mode === 'task') return `task:${state.task.start}:${state.task.end}:${state.task.name}`;
+    if (state.mode === 'gap') return `gap:${state.stateStart}:${state.stateEnd}`;
+    return 'ended';
+  }
+
+  function renderStaticRuntime(now, state, sec) {
     let category = 'ended';
-    let stateKey = 'ended';
     let displayName = '今日计划已结束';
     let range = '--:-- — --:--';
     let countdownLabel = 'DAY COMPLETE';
 
     if (state.mode === 'task') {
       category = state.task.category || 'custom';
-      stateKey = `task:${state.task.start}:${state.task.end}:${state.task.name}`;
       displayName = state.task.name;
       range = `${state.task.start} — ${state.task.end}`;
       countdownLabel = 'UNTIL TASK END';
     } else if (state.mode === 'gap') {
       category = 'free';
-      stateKey = `gap:${state.stateStart}:${state.stateEnd}`;
       displayName = '自由时间';
       const startText = secondsToClock(state.stateStart);
       const endText = secondsToClock(state.stateEnd);
@@ -979,36 +1012,66 @@
       countdownLabel = state.nextTask ? 'UNTIL NEXT TASK' : 'FREE UNTIL DAY END';
     }
 
-    if (lastStateKey !== null && lastStateKey !== stateKey) flashStateChange();
-    lastStateKey = stateKey;
+    const visualStateKey = getVisualStateDescriptor(state);
+    if (lastStateKey !== null && lastStateKey !== visualStateKey) flashStateChange();
+    lastStateKey = visualStateKey;
 
     const meta = applyCategory(category);
-    els.currentTaskName.textContent = displayName;
-    els.currentTaskRange.textContent = range;
-    els.categoryBadge.textContent = meta.label;
-    els.countdownLabel.textContent = countdownLabel;
+    setTextIfChanged(els.currentTaskName, displayName);
+    setTextIfChanged(els.currentTaskRange, range);
+    setTextIfChanged(els.categoryBadge, meta.label);
+    setTextIfChanged(els.countdownLabel, countdownLabel);
+    setTextIfChanged(els.progressLabel, state.mode === 'gap' ? 'FREE WINDOW PROGRESS' : state.mode === 'ended' ? 'DAY PROGRESS' : 'TASK PROGRESS');
+
+    renderNextStatic(state);
+    renderSchedule(state, sec);
+    renderTodayIndicator(now);
+    renderWeekPlanRuntimeUi(now);
+    renderRunButton(now);
+  }
+
+  function renderDynamicRuntime(now, state, sec) {
+    setTextIfChanged(els.systemDate, `${formatDate(now)} ${formatClock(now)}`);
 
     if (state.mode === 'ended') {
-      els.countdown.textContent = '--:--';
-      els.progressFill.style.width = '100%';
-      els.progressPercent.textContent = '100%';
-      els.progressLabel.textContent = 'DAY PROGRESS';
+      setTextIfChanged(els.countdown, '--:--');
+      if (els.progressFill.style.width !== '100%') els.progressFill.style.width = '100%';
+      setTextIfChanged(els.progressPercent, '100%');
     } else {
       const remaining = state.stateEnd - sec;
       const span = Math.max(1, state.stateEnd - state.stateStart);
       const elapsed = Math.min(span, Math.max(0, sec - state.stateStart));
       const progress = Math.min(100, Math.max(0, elapsed / span * 100));
-      els.countdown.textContent = secondsToHms(remaining);
-      els.progressFill.style.width = `${progress}%`;
-      els.progressPercent.textContent = `${Math.floor(progress)}%`;
-      els.progressLabel.textContent = state.mode === 'gap' ? 'FREE WINDOW PROGRESS' : 'TASK PROGRESS';
+      setTextIfChanged(els.countdown, secondsToHms(remaining));
+      const width = `${progress}%`;
+      if (els.progressFill.style.width !== width) els.progressFill.style.width = width;
+      setTextIfChanged(els.progressPercent, `${Math.floor(progress)}%`);
     }
 
-    renderNext(state, sec);
-    renderSchedule(state, sec);
-    renderTodayIndicator(now);
-    renderWeekPlanRuntimeUi(now);
-    renderRunButton();
+    renderNextCountdown(state, sec);
+  }
+
+  function renderRuntimeFrame(forceState = false) {
+    const now = getNow();
+    const sec = getSecondsOfDay(now);
+    const state = getScheduleState(now);
+    processSoundEvents(now);
+
+    const runtimeKey = getRuntimeStateDescriptor(state, now);
+    if (forceState || runtimeKey !== lastRuntimeRenderKey) {
+      lastRuntimeRenderKey = runtimeKey;
+      renderStaticRuntime(now, state, sec);
+      requestScheduleCruise();
+    }
+    renderDynamicRuntime(now, state, sec);
+  }
+
+  function render() {
+    renderRuntimeFrame(true);
+  }
+
+  function runtimeTick() {
+    renderRuntimeFrame(false);
   }
 
   function secondsToClock(sec) {
@@ -1018,21 +1081,29 @@
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
-  function renderNext(state, sec) {
+  function renderNextStatic(state) {
     const next = state.nextTask;
     if (!next) {
-      els.nextTaskName.textContent = '无下一任务';
-      els.nextTaskRange.textContent = '--:-- — --:--';
-      els.nextTaskCategory.textContent = 'END OF SCHEDULE';
-      els.nextStartsIn.textContent = '--';
+      setTextIfChanged(els.nextTaskName, '无下一任务');
+      setTextIfChanged(els.nextTaskRange, '--:-- — --:--');
+      setTextIfChanged(els.nextTaskCategory, 'END OF SCHEDULE');
+      setTextIfChanged(els.nextStartsIn, '--');
+      return;
+    }
+    const meta = getCategoryMeta(next.category);
+    setTextIfChanged(els.nextTaskName, next.name);
+    setTextIfChanged(els.nextTaskRange, `${next.start} — ${next.end}`);
+    setTextIfChanged(els.nextTaskCategory, `${meta.label} / ${meta.name}`);
+  }
+
+  function renderNextCountdown(state, sec) {
+    const next = state.nextTask;
+    if (!next) {
+      setTextIfChanged(els.nextStartsIn, '--');
       return;
     }
     const delta = Math.max(0, timeToSeconds(next.start) - sec);
-    const meta = getCategoryMeta(next.category);
-    els.nextTaskName.textContent = next.name;
-    els.nextTaskRange.textContent = `${next.start} — ${next.end}`;
-    els.nextTaskCategory.textContent = `${meta.label} / ${meta.name}`;
-    els.nextStartsIn.textContent = `IN ${secondsToHms(delta)}`;
+    setTextIfChanged(els.nextStartsIn, `IN ${secondsToHms(delta)}`);
   }
 
   function renderSchedule(state, sec) {
@@ -1042,8 +1113,7 @@
     const currentCount = state.mode === 'task' ? 1 : 0;
     els.dayProgress.textContent = `TODAY ${Math.min(tasks.length, completed + currentCount)} / ${tasks.length}`;
 
-    // render() runs four times per second. Rebuilding this list every tick would
-    // destroy the scroll position, so only rebuild when the actual upcoming
+    // Preserve the scroll position by rebuilding only when the actual upcoming
     // schedule changes (task transition, template edit/switch, etc.).
     const renderKey = upcoming.map(task => `${task.start}|${task.end}|${task.name}|${task.category}`).join('\n');
     if (scheduleCruise.renderKey === renderKey) return;
@@ -1089,7 +1159,40 @@
     els.todayBtn.title = source.modified ? '今天存在临时修改' : '编辑今天的运行日程';
   }
 
+  function stopScheduleCruiseLoop() {
+    if (scheduleCruise.rafId !== null) {
+      cancelAnimationFrame(scheduleCruise.rafId);
+      scheduleCruise.rafId = null;
+    }
+    if (scheduleCruise.wakeTimerId !== null) {
+      clearTimeout(scheduleCruise.wakeTimerId);
+      scheduleCruise.wakeTimerId = null;
+    }
+  }
+
+  function scheduleCruiseWake(delayMs) {
+    if (document.hidden || scheduleCruise.hoverPaused) return;
+    if (scheduleCruise.wakeTimerId !== null) clearTimeout(scheduleCruise.wakeTimerId);
+    scheduleCruise.wakeTimerId = setTimeout(() => {
+      scheduleCruise.wakeTimerId = null;
+      requestScheduleCruise();
+    }, Math.max(0, delayMs));
+  }
+
+  function requestScheduleCruise() {
+    if (document.hidden || scheduleCruise.hoverPaused) return;
+    const nowMs = performance.now();
+    if (nowMs < scheduleCruise.manualPauseUntil) {
+      scheduleCruiseWake(scheduleCruise.manualPauseUntil - nowMs);
+      return;
+    }
+    if (scheduleCruise.rafId === null) {
+      scheduleCruise.rafId = requestAnimationFrame(scheduleCruiseFrame);
+    }
+  }
+
   function resetScheduleCruise(resetPosition = false) {
+    stopScheduleCruiseLoop();
     if (resetPosition) {
       els.scheduleList.scrollTop = 0;
       scheduleCruise.position = 0;
@@ -1100,15 +1203,18 @@
     scheduleCruise.edgePauseUntil = performance.now() + SCHEDULE_CRUISE.topPauseMs;
     scheduleCruise.returning = false;
     els.scheduleList.classList.remove('is-cruising');
+    requestScheduleCruise();
   }
 
   function pauseScheduleCruiseForManualInput() {
+    stopScheduleCruiseLoop();
     scheduleCruise.position = els.scheduleList.scrollTop;
     scheduleCruise.manualPauseUntil = performance.now() + SCHEDULE_CRUISE.manualResumeDelayMs;
     scheduleCruise.returning = false;
     scheduleCruise.lastFrameMs = null;
     els.scheduleList.classList.add('is-paused');
     els.scheduleList.classList.remove('is-cruising');
+    scheduleCruiseWake(SCHEDULE_CRUISE.manualResumeDelayMs);
   }
 
   function easeInOutCubic(t) {
@@ -1116,20 +1222,28 @@
   }
 
   function scheduleCruiseFrame(nowMs) {
+    scheduleCruise.rafId = null;
     const list = els.scheduleList;
-    const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
-    const manualPaused = nowMs < scheduleCruise.manualPauseUntil;
-    const paused = scheduleCruise.hoverPaused || manualPaused;
 
-    list.classList.toggle('is-paused', paused);
-
-    if (maxScroll <= 1 || paused) {
-      // While the user is in control, continuously reacquire their real scroll
-      // position so automatic cruising resumes from exactly where they left it.
-      scheduleCruise.position = list.scrollTop;
-      scheduleCruise.lastFrameMs = nowMs;
+    if (document.hidden || scheduleCruise.hoverPaused) {
       list.classList.remove('is-cruising');
-      requestAnimationFrame(scheduleCruiseFrame);
+      return;
+    }
+
+    if (nowMs < scheduleCruise.manualPauseUntil) {
+      scheduleCruise.position = list.scrollTop;
+      list.classList.add('is-paused');
+      list.classList.remove('is-cruising');
+      scheduleCruiseWake(scheduleCruise.manualPauseUntil - nowMs);
+      return;
+    }
+
+    list.classList.remove('is-paused');
+    const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+    if (maxScroll <= 1) {
+      scheduleCruise.position = list.scrollTop;
+      scheduleCruise.lastFrameMs = null;
+      list.classList.remove('is-cruising');
       return;
     }
 
@@ -1144,29 +1258,36 @@
         list.scrollTop = 0;
         scheduleCruise.returning = false;
         scheduleCruise.edgePauseUntil = nowMs + SCHEDULE_CRUISE.topPauseMs;
-        scheduleCruise.lastFrameMs = nowMs;
+        scheduleCruise.lastFrameMs = null;
+        list.classList.remove('is-cruising');
+        scheduleCruiseWake(SCHEDULE_CRUISE.topPauseMs);
+        return;
       }
-      requestAnimationFrame(scheduleCruiseFrame);
+      requestScheduleCruise();
       return;
     }
 
     if (nowMs < scheduleCruise.edgePauseUntil) {
-      scheduleCruise.lastFrameMs = nowMs;
-      requestAnimationFrame(scheduleCruiseFrame);
+      scheduleCruise.lastFrameMs = null;
+      list.classList.remove('is-cruising');
+      scheduleCruiseWake(scheduleCruise.edgePauseUntil - nowMs);
       return;
     }
 
     if (scheduleCruise.position >= maxScroll - 1) {
-      // Pause at the end long enough to read the final entries, then glide back.
+      scheduleCruise.position = maxScroll;
+      list.scrollTop = maxScroll;
       if (!scheduleCruise.edgePauseUntil) scheduleCruise.edgePauseUntil = nowMs + SCHEDULE_CRUISE.edgePauseMs;
       if (nowMs >= scheduleCruise.edgePauseUntil) {
         scheduleCruise.returning = true;
         scheduleCruise.returnStartMs = nowMs;
         scheduleCruise.returnFrom = scheduleCruise.position;
         scheduleCruise.edgePauseUntil = 0;
+        requestScheduleCruise();
+      } else {
+        list.classList.remove('is-cruising');
+        scheduleCruiseWake(scheduleCruise.edgePauseUntil - nowMs);
       }
-      scheduleCruise.lastFrameMs = nowMs;
-      requestAnimationFrame(scheduleCruiseFrame);
       return;
     }
 
@@ -1174,15 +1295,12 @@
     const previous = scheduleCruise.lastFrameMs ?? nowMs;
     const dtSeconds = Math.min(0.05, Math.max(0, (nowMs - previous) / 1000));
     scheduleCruise.lastFrameMs = nowMs;
-
-    // Accumulate fractional pixels ourselves. This fixes the apparent "not
-    // scrolling" failure on browsers that round scrollTop assignments.
     scheduleCruise.position = Math.min(
       maxScroll,
       scheduleCruise.position + SCHEDULE_CRUISE.speedPxPerSecond * dtSeconds
     );
     list.scrollTop = scheduleCruise.position;
-    requestAnimationFrame(scheduleCruiseFrame);
+    requestScheduleCruise();
   }
 
   function fillTemplateSelect(select, selectedId, { includeOff = false } = {}) {
@@ -1655,17 +1773,16 @@
     showTodayMessage('今天已恢复为基础模板。');
   }
 
-  function getRunState() {
+  function loadRunState() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.runState)) || {}; } catch (_) { return {}; }
   }
 
-  function isTodayRunning() {
-    const state = getRunState();
-    return state.date === formatDate(new Date()) && state.active === true;
+  function isTodayRunning(now = getNow()) {
+    return runState.date === formatDate(now) && runState.active === true;
   }
 
-  function renderRunButton() {
-    const running = isTodayRunning();
+  function renderRunButton(now = getNow()) {
+    const running = isTodayRunning(now);
     const needsUnlock = running && settings.sound.enabled && !soundRuntime.unlocked;
     if (!running) {
       els.startTodayBtn.textContent = 'START TODAY';
@@ -1681,8 +1798,10 @@
   }
 
   async function startToday() {
-    if (!isTodayRunning()) {
-      localStorage.setItem(STORAGE_KEYS.runState, JSON.stringify({ active: true, date: formatDate(new Date()), startedAt: new Date().toISOString() }));
+    const now = getNow();
+    if (!isTodayRunning(now)) {
+      runState = { active: true, date: formatDate(now), startedAt: now.toISOString() };
+      localStorage.setItem(STORAGE_KEYS.runState, JSON.stringify(runState));
     }
     resetSoundEventCursor();
     if (settings.sound.enabled) {
@@ -1993,11 +2112,22 @@
       scheduleCruise.hoverPaused = true;
       scheduleCruise.returning = false;
       scheduleCruise.lastFrameMs = null;
+      stopScheduleCruiseLoop();
+      els.scheduleList.classList.add('is-paused');
+      els.scheduleList.classList.remove('is-cruising');
     });
     els.scheduleList.addEventListener('mouseleave', () => {
       scheduleCruise.hoverPaused = false;
+      scheduleCruise.position = els.scheduleList.scrollTop;
       scheduleCruise.lastFrameMs = null;
+      els.scheduleList.classList.remove('is-paused');
+      requestScheduleCruise();
     });
+    els.scheduleList.addEventListener('scroll', () => {
+      if (scheduleCruise.hoverPaused || performance.now() < scheduleCruise.manualPauseUntil) {
+        scheduleCruise.position = els.scheduleList.scrollTop;
+      }
+    }, { passive: true });
     els.scheduleList.addEventListener('wheel', pauseScheduleCruiseForManualInput, { passive: true });
     els.scheduleList.addEventListener('touchstart', pauseScheduleCruiseForManualInput, { passive: true });
     els.scheduleList.addEventListener('pointerdown', pauseScheduleCruiseForManualInput);
@@ -2008,17 +2138,57 @@
     });
   }
 
+  function scheduleNextRuntimeTick() {
+    if (runtimeTimerId !== null) clearTimeout(runtimeTimerId);
+    runtimeTimerId = setTimeout(() => {
+      runtimeTimerId = null;
+      runtimeTick();
+      scheduleNextRuntimeTick();
+    }, document.hidden ? 1000 : 250);
+  }
+
+  function bindPerformanceLifecycle() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopScheduleCruiseLoop();
+      } else {
+        render();
+        requestScheduleCruise();
+      }
+      scheduleNextRuntimeTick();
+    });
+
+    window.addEventListener('storage', (event) => {
+      if (event.key === STORAGE_KEYS.runState) {
+        runState = loadRunState();
+        renderRunButton();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      scheduleCruise.position = els.scheduleList.scrollTop;
+      scheduleCruise.lastFrameMs = null;
+      requestScheduleCruise();
+    }, { passive: true });
+
+    if ('ResizeObserver' in window) {
+      const cruiseResizeObserver = new ResizeObserver(() => requestScheduleCruise());
+      cruiseResizeObserver.observe(els.scheduleList);
+    }
+  }
+
   function init() {
     applyAppearance(settings.appearance);
     refreshTemplateSelects();
     bindPwaEvents();
     bindEvents();
+    bindPerformanceLifecycle();
     refreshSoundUi();
     refreshInstallButton();
     resetSoundEventCursor();
     render();
-    setInterval(render, 250);
-    requestAnimationFrame(scheduleCruiseFrame);
+    scheduleNextRuntimeTick();
+    requestScheduleCruise();
   }
 
   init();

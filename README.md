@@ -1,10 +1,24 @@
-# TEMPO-7 v0.7.1 — INTERACTION REFINEMENT
+# TEMPO-7 v0.7.2 — PERFORMANCE OPTIMIZATION
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装和离线使用。
 
-v0.7.1 是一轮以 **交互细节与 TODAY 工作流** 为核心的小版本更新：音频、TODAY 与 WEEK 的运行状态统一使用绿色状态指示；TODAY 可以把当前编辑内容直接导出为独立 JSON，也可以另存为长期模板，并明确区分“只保存”“只应用到今天”“写入 WEEK PLAN”三种行为。
+v0.7.2 是一轮 **无意改变现有视觉和功能表现的性能整理**。核心目标是降低长期运行时不必要的 DOM 写入、localStorage 读取和动画帧占用，让倒计时、SCHEDULE 巡航、铃声监听和 PWA 长时间运行更平稳。
 
-v0.7.0 引入的完整备份与自托管 DINish 字体体系保持不变：FULL BACKUP 仍可一次迁移模板、WEEK PLAN、TODAY Override、外观、铃声设置与 IndexedDB 中的 MP3 / WAV 音频本体。
+v0.7.1 的 TODAY 工作流、v0.7.0 的完整备份与自托管 DINish 字体体系均保持不变。
+
+
+## v0.7.2 性能优化
+
+- **主运行循环拆分**：250 ms 运行循环只负责必须持续变化的时间、倒计时、进度条与 NEXT 倒计时；任务名称、分类色、SCHEDULE、TODAY / WEEK / AUDIO 状态等静态内容仅在状态实际变化或明确操作后刷新。
+- **减少 DOM 写入**：动态文本采用“内容变化后才写入”的方式，避免相同倒计时状态和时间文字被重复写回 DOM。
+- **SCHEDULE 按需巡航**：不再让 `requestAnimationFrame` 在无溢出、鼠标悬停、手动暂停或页面隐藏时永久空转；只有列表确实需要移动时才持续申请动画帧。
+- **暂停阶段休眠**：SCHEDULE 顶部 / 底部停顿改为定时唤醒，停顿期间不占用 60 FPS 动画循环；手动滚动后的 5 秒等待期同样休眠。
+- **页面隐藏降频**：页面不可见时，主运行循环由 250 ms 调整为 1000 ms；重新回到前台后立即完整刷新并恢复 250 ms。铃声跨时间点检测仍保留原有 90 秒 catch-up 保护。
+- **铃声事件缓存**：当前日程对应的铃声事件表只在日程源发生变化时重新生成，不再每个运行 tick 重新构建。
+- **铃声触发日志缓存**：当天已触发铃声记录保留内存缓存，仅在日期变化或实际新增触发记录时访问 / 写入 localStorage。
+- **运行状态缓存**：`START TODAY / AUDIO ENABLED` 的运行状态不再每 250 ms 读取 localStorage；当前标签页以内存状态为主，并保留跨标签页 `storage` 事件同步。
+- **响应式巡航恢复**：窗口或 SCHEDULE 容器尺寸变化时会重新检测是否需要自动巡航，避免按需动画优化后因尺寸变化漏启滚动。
+- **不改变用户数据格式**：FULL BACKUP schema、模板、WEEK PLAN、TODAY Override、LOOK、音频 IndexedDB 均保持兼容，不需要迁移数据。
 
 ## v0.7.1 新增与调整
 
@@ -121,7 +135,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.7.1"
+git commit -m "TEMPO-7 v0.7.2"
 git push
 ```
 
@@ -152,15 +166,22 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 项目 CSS 中 DINish 排在字体栈首位；因此只要仓库字体资源加载成功，就不会再调用用户设备上的 Bahnschrift。中文因 DINish 无对应 CJK 字形而自然回退到项目内思源黑体。
 
 
-## v0.7.2 前瞻
+## v0.7.3 前瞻
 
-计划中的下一轮小版本：
+计划中的下一轮功能版本：
 
 - TODAY 支持 `ADD NEW TYPE`，最多新增 10 个自定义分类；
 - 铃声系统扩展为所有 TYPE 均可配置自定义铃声，包括用户自定义分类；
 - STATE TRANSITION 扩展为更复杂的状态过渡动画，具体视觉方案待定。
 
 ## 版本记录
+
+### v0.7.2 — Performance Optimization
+- 拆分动态时钟刷新与静态状态刷新，减少长期运行中的重复 DOM 操作。
+- SCHEDULE 改为按需 requestAnimationFrame；无滚动需求、悬停、手动暂停、页面隐藏与边缘停顿时停止持续动画帧。
+- 页面隐藏时主 tick 降至 1000 ms，返回前台立即恢复并完整校准。
+- 缓存铃声事件表、当天触发日志和 START TODAY 运行状态，减少重复计算与 localStorage 访问。
+- 保持 v0.7.1 的所有可见功能、交互、数据格式和备份兼容性。
 
 ### v0.7.1 — Interaction Refinement
 - 音频完成激活后顶部按钮显示 `AUDIO ENABLED`。
