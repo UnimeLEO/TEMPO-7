@@ -260,6 +260,109 @@
     soundRuntime.buffers.delete(id);
   }
 
+  async function putAudioAssetRecord({ id, blob, name, type, updatedAt }) {
+    const db = await openMediaDb();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(MEDIA_DB.store, 'readwrite');
+        tx.objectStore(MEDIA_DB.store).put({
+          id,
+          blob,
+          name: name || `${id}.audio`,
+          type: type || blob.type || '',
+          size: blob.size,
+          updatedAt: updatedAt || new Date().toISOString()
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('恢复音频失败。'));
+        tx.onabort = () => reject(tx.error || new Error('恢复音频失败。'));
+      });
+    } finally {
+      db.close();
+    }
+    soundRuntime.buffers.delete(id);
+  }
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function base64ToUint8Array(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function serializeAudioAsset(id) {
+    const asset = await getAudioAsset(id);
+    if (!asset?.blob) return null;
+    const buffer = await asset.blob.arrayBuffer();
+    return {
+      id,
+      name: asset.name || `${id}.audio`,
+      type: asset.type || asset.blob.type || '',
+      size: asset.blob.size,
+      updatedAt: asset.updatedAt || null,
+      encoding: 'base64',
+      data: arrayBufferToBase64(buffer)
+    };
+  }
+
+  async function collectAudioBackup() {
+    const ids = [SOUND_ASSETS.classStart, SOUND_ASSETS.classEnd];
+    const records = await Promise.all(ids.map(serializeAudioAsset));
+    return records.filter(Boolean);
+  }
+
+  async function restoreAudioBackup(rawAssets, { exact = true } = {}) {
+    if (!Array.isArray(rawAssets)) return { restored: 0, legacy: true };
+
+    const allowedIds = new Set([SOUND_ASSETS.classStart, SOUND_ASSETS.classEnd]);
+    const restoredIds = new Set();
+    let restored = 0;
+
+    for (const record of rawAssets) {
+      if (!record || !allowedIds.has(record.id)) continue;
+      if (record.encoding !== 'base64' || typeof record.data !== 'string') {
+        throw new Error(`音频备份 ${record.id} 的编码无效。`);
+      }
+      let bytes;
+      try {
+        bytes = base64ToUint8Array(record.data);
+      } catch (_) {
+        throw new Error(`音频备份 ${record.id} 已损坏，无法解码。`);
+      }
+      const blob = new Blob([bytes], { type: record.type || 'application/octet-stream' });
+      if (Number.isFinite(record.size) && record.size >= 0 && blob.size !== record.size) {
+        throw new Error(`音频备份 ${record.name || record.id} 大小校验失败。`);
+      }
+      await putAudioAssetRecord({
+        id: record.id,
+        blob,
+        name: record.name,
+        type: record.type,
+        updatedAt: record.updatedAt
+      });
+      restoredIds.add(record.id);
+      restored += 1;
+    }
+
+    if (exact) {
+      for (const id of allowedIds) {
+        if (!restoredIds.has(id)) await deleteAudioAsset(id);
+      }
+    }
+
+    return { restored, legacy: false };
+  }
+
   function formatFileSize(bytes) {
     if (!Number.isFinite(bytes)) return '';
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -1441,26 +1544,49 @@
     renderRunButton();
   }
 
-  function exportJson() {
-    const payload = {
-      app: 'TEMPO-7',
-      appVersion: APP_VERSION,
-      schemaVersion: 4,
-      exportedAt: new Date().toISOString(),
-      templates,
-      settings,
-      dailyOverrides
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `TEMPO-7-backup-${formatDate(new Date())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showDataMessage('备份已导出，包含模板、周计划、外观设置、铃声设置与 TODAY OVERRIDE。', true);
+  async function exportJson() {
+    const originalText = els.exportJsonBtn.textContent;
+    els.exportJsonBtn.disabled = true;
+    els.exportJsonBtn.textContent = 'EXPORTING…';
+    showDataMessage('正在整理完整备份，包括 IndexedDB 中的铃声音频…', true);
+
+    try {
+      const audioAssets = await collectAudioBackup();
+      const payload = {
+        app: 'TEMPO-7',
+        appVersion: APP_VERSION,
+        schemaVersion: 5,
+        backupType: 'full',
+        exportedAt: new Date().toISOString(),
+        templates,
+        settings,
+        dailyOverrides,
+        media: {
+          format: 1,
+          audioAssets
+        }
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `TEMPO-7-full-backup-${formatDate(new Date())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      const audioBytes = audioAssets.reduce((sum, asset) => sum + (Number(asset.size) || 0), 0);
+      const audioSummary = audioAssets.length
+        ? `${audioAssets.length} 个铃声音频（原始音频约 ${formatFileSize(audioBytes)}）`
+        : '未配置铃声音频';
+      showDataMessage(`完整备份已导出：模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置和 ${audioSummary}。`, true);
+    } catch (err) {
+      showDataMessage(err.message || '完整备份导出失败。', false);
+    } finally {
+      els.exportJsonBtn.disabled = false;
+      els.exportJsonBtn.textContent = originalText;
+    }
   }
 
   function normalizeImportedOverrides(rawOverrides, importedTemplates) {
@@ -1518,17 +1644,27 @@
           bindings: { class: { start: SOUND_ASSETS.classStart, end: SOUND_ASSETS.classEnd } }
         }
       };
+
+      const hasFullMedia = payload.backupType === 'full' && Array.isArray(payload.media?.audioAssets);
+      const mediaResult = hasFullMedia
+        ? await restoreAudioBackup(payload.media.audioAssets, { exact: true })
+        : { restored: 0, legacy: true };
+
       const importedEffective = getActiveTemplate();
       editorTemplateId = importedEffective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : importedEffective.id;
       saveAll();
       saveDailyOverrides();
       refreshTemplateSelects();
-      refreshSoundUi();
+      await refreshSoundUi();
       scheduleCruise.renderKey = null;
       resetSoundEventCursor();
       render();
       applyAppearance(settings.appearance);
-      showDataMessage(`已导入 ${templates.length} 个模板、周计划、外观设置和 TODAY OVERRIDE。`, true);
+
+      const mediaMessage = mediaResult.legacy
+        ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
+        : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
+      showDataMessage(`恢复完成：${templates.length} 个模板、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE SOUND / START TODAY。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {

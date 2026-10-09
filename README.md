@@ -1,20 +1,25 @@
-# TEMPO-7 v0.7.0 — SELF-HOSTED DINish TYPOGRAPHY
+# TEMPO-7 v0.7.0 — COMPLETE BACKUP + SELF-HOSTED DINish TYPOGRAPHY
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装和离线使用。
 
-v0.7.0 的重点是完成英文 / 数字字体的可分发化：不再依赖 Windows 本机 Bahnschrift，改为由项目 `fonts/` 目录自托管开源 DINish，并让 PWA 离线缓存字体资源。主倒计时单独使用 DINish Bold，其余英文与数字界面使用 DINish SemiBold。
+v0.7.0 的核心更新是 **完整备份 / 一键恢复**：除模板、WEEK PLAN、外观、铃声设置和 TODAY Override 外，已导入的 MP3 / WAV 铃声音频本体也会从 IndexedDB 读取并写入单个 JSON 备份文件，换设备或换浏览器后可以一次恢复。
+
+同时完成英文 / 数字字体的可分发化：不再依赖 Windows 本机 Bahnschrift，改为由项目 `fonts/` 目录自托管开源 DINish，并让 PWA 离线缓存字体资源。主倒计时单独使用 DINish Bold，其余英文与数字界面使用 DINish SemiBold。
 
 ## v0.7.0 新增与调整
 
+- **FULL BACKUP**：备份格式升级至 schema v5，可一次导出模板、WEEK PLAN、TODAY Override、外观、铃声设置以及 MP3 / WAV 音频本体。
+- **音频进入备份**：IndexedDB 中的上课铃 / 下课铃会以 Base64 形式封装进同一个 JSON，因此备份文件可独立迁移到另一台设备。
+- **一键恢复音频**：导入 v0.7.0 FULL BACKUP 时，同时恢复 localStorage 配置与 IndexedDB 音频；备份中未配置的铃声槽位会同步保持为空。
+- **兼容旧版 JSON**：v0.1–v0.6 以及早期 v0.7 配置备份仍可导入；旧备份没有音频本体时，不会删除当前浏览器已有铃声。
+- **会话状态不迁移**：浏览器音频解锁权限、当前 START TODAY 运行会话和当天已触发铃声记录属于设备 / 会话状态，不写入迁移备份；恢复后需重新点击一次 ENABLE SOUND / START TODAY。
 - **Bahnschrift → DINish**：英文与数字默认字体更换为开源 DINish。
 - **项目字体优先**：CSS 优先加载 GitHub 仓库 `fonts/` 中的 DINish，不再以操作系统是否安装 Bahnschrift 为前提。
-- **DINish SemiBold / 600**：TEMPO-7 的英文标签、时间、普通数字与界面文字使用 `DINish-SemiBold.ttf`。
-- **DINish Bold / 700**：中央主倒计时单独使用 `DINish-Bold.ttf`，与普通界面数字建立更清楚的层级。
+- **DINish SemiBold / 600**：英文标签、时间、普通数字与界面文字使用 `DINish-SemiBold.ttf`。
+- **DINish Bold / 700**：中央主倒计时单独使用 `DINish-Bold.ttf`。
 - **中文保持不变**：中文继续使用项目内 `SourceHanSansCN-Heavy.otf`。
-- **混排自动回退**：同一段文本中，拉丁字母与数字优先由 DINish 渲染；DINish 不包含的中文字形自动回退到思源黑体。
-- **PWA 离线字体缓存**：Service Worker 的 App Shell 已加入 DINish SemiBold / Bold，安装版离线启动时仍可保持一致字形。
-- **字体许可随项目分发**：`fonts/DINish-OFL.txt` 随仓库保存。DINish 使用 SIL Open Font License 1.1，可作为 Web Font 自托管与随软件分发。
-- 版本号、HTML cache-busting 与 PWA cache 名称同步更新至 `0.7.0`。
+- **PWA 离线字体缓存**：Service Worker 的 App Shell 已加入 DINish SemiBold / Bold。
+- **字体许可随项目分发**：`fonts/DINish-OFL.txt` 随仓库保存；DINish 使用 SIL Open Font License 1.1。
 - v0.6.0 的 LOOK 外观系统、真实时间运行、108px 起始倒计时字号及 `-0.045em` 字距保持不变。
 
 ## 当前核心功能
@@ -27,7 +32,7 @@ v0.7.0 的重点是完成英文 / 数字字体的可分发化：不再依赖 Win
 - TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板。
 - WEEK PLAN：按周一至周日自动选择模板，也可设为 OFF / NO SCHEDULE。
 - LOOK：可配置界面底色、文字色、分类状态色及状态切换动画。
-- JSON 导入 / 导出：用于模板、周计划、设置、外观、TODAY Override 的备份与迁移。
+- FULL BACKUP 导入 / 导出：模板、周计划、设置、外观、TODAY Override 与 MP3 / WAV 铃声音频可在一个 JSON 中完整迁移。
 - PWA：可从 GitHub Pages 安装为独立窗口应用，并支持 App Shell 离线启动。
 - 自托管字体：英文 / 数字使用 DINish，中文使用 Source Han Sans CN Heavy。
 
@@ -51,6 +56,20 @@ v0.7.0 的重点是完成英文 / 数字字体的可分发化：不再依赖 Win
 3. 点击 `SAVE WEEK PLAN`。
 
 启用后，顶栏 `TEMPLATE` 会锁定到当天由周计划选择的模板。`TODAY` 仍优先于基础模板，只修改当天。
+
+## 完整备份与恢复
+
+点击顶栏 `DATA`：
+
+1. `EXPORT FULL BACKUP` 会读取 localStorage 与 IndexedDB；
+2. 所有模板、WEEK PLAN、TODAY Override、LOOK 外观、铃声设置与已导入 MP3 / WAV 会写入一个 `TEMPO-7-full-backup-YYYY-MM-DD.json`；
+3. 音频以 Base64 写入 JSON，因此备份文件通常比原始音频总大小约大三分之一；
+4. 在另一设备 / 浏览器中选择 `IMPORT BACKUP`，TEMPO-7 会同时恢复配置和铃声音频；
+5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后仍需点击一次 `ENABLE SOUND` / `START TODAY`。
+
+为避免产生错误的铃声行为，以下临时运行状态不会写入迁移备份：`runState`、当天铃声已触发记录、Web Audio 的解锁状态。它们会在目标设备上按新的运行会话重新建立。
+
+旧版本 JSON 仍可导入。若检测到旧备份没有 `media.audioAssets`，TEMPO-7 只恢复其中存在的配置数据，并保留目标浏览器当前已有的铃声音频。
 
 ## 本地测试
 
@@ -87,10 +106,10 @@ GitHub Pages 会随 `main` 分支更新。
 - TODAY Override：`localStorage`
 - 外观与铃声设置：`localStorage`
 - MP3 / WAV 音频本体：`IndexedDB`
-- JSON：备份模板、周计划、外观/铃声设置和 TODAY Override
-- JSON **不包含** MP3 / WAV 音频文件本体
+- FULL BACKUP：把上述可迁移用户数据与 IndexedDB 音频共同封装到单个 JSON（schema v5）
+- 不迁移：当前运行会话、浏览器音频授权状态、当天已触发铃声日志
 
-同一设备、同一浏览器、同一网站来源会继续读取这些本地数据。`localhost:8000` 与 GitHub Pages 属于不同来源，因此二者的浏览器本地数据互不自动共享。
+同一设备、同一浏览器、同一网站来源会继续读取这些本地数据。`localhost:8000` 与 GitHub Pages 属于不同来源，因此二者的浏览器本地数据互不自动共享；v0.7.0 FULL BACKUP 可以用于二者之间迁移。
 
 ## 字体
 
@@ -106,12 +125,15 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 
 ## 版本记录
 
-### v0.7.0 — Self-hosted DINish Typography
+### v0.7.0 — Complete Backup + Self-hosted DINish Typography
+- 完整备份 schema 升级至 v5，MP3 / WAV 音频本体与配置一并导出。
+- FULL BACKUP 支持在新设备 / 新浏览器一键恢复模板、WEEK PLAN、TODAY Override、外观、铃声设置和 IndexedDB 音频。
+- 保持对旧版 JSON 的向后兼容；旧备份不含音频时不会清除目标浏览器已有铃声。
 - 用开源 DINish 替换对 Windows Bahnschrift 的运行时依赖。
 - DINish SemiBold 用于英文、时间与普通数字；主倒计时单独使用 DINish Bold。
 - DINish 字体文件放入仓库 `fonts/` 并加入 PWA 离线缓存。
 - 随项目加入 DINish 的 SIL Open Font License 1.1 文本。
-- README 补充字体加载、分发和许可说明。
+- README 补充完整备份、字体加载、分发和许可说明。
 
 ### v0.6.0 — Appearance System
 - 新增 LOOK 外观系统、界面底色与分类状态色自定义、切换动画模式。

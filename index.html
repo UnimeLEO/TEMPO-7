@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.7.0" />
+  <link rel="stylesheet" href="style.css?v=0.7.0-full" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -215,11 +215,12 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.7.0 会把模板、周计划、外观设置、铃声设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.0 的 FULL BACKUP 会把模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
+      <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE SOUND / START TODAY 以重新激活声音。</p>
 
       <div class="data-actions">
-        <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT JSON</button>
-        <label class="btn file-btn">IMPORT JSON<input id="importJsonInput" type="file" accept="application/json,.json" /></label>
+        <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT FULL BACKUP</button>
+        <label class="btn file-btn">IMPORT BACKUP<input id="importJsonInput" type="file" accept="application/json,.json" /></label>
       </div>
       <div id="dataMessage" class="message-box" hidden></div>
     </form>
@@ -390,6 +391,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.7.0"></script>
+  <script src="app.js?v=0.7.0-full"></script>
 </body>
 </html>
