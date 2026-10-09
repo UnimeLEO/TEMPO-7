@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.4.0';
+  const APP_VERSION = '0.5.0';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -22,6 +22,17 @@
   };
 
   const SOUND_CATCHUP_LIMIT_SECONDS = 90;
+  const OFF_TEMPLATE_ID = '__off__';
+  const OFF_TEMPLATE = { id: OFF_TEMPLATE_ID, name: 'OFF / NO SCHEDULE', tasks: [] };
+  const WEEK_DAYS = [
+    { key: '1', en: 'MON', zh: '周一' },
+    { key: '2', en: 'TUE', zh: '周二' },
+    { key: '3', en: 'WED', zh: '周三' },
+    { key: '4', en: 'THU', zh: '周四' },
+    { key: '5', en: 'FRI', zh: '周五' },
+    { key: '6', en: 'SAT', zh: '周六' },
+    { key: '0', en: 'SUN', zh: '周日' }
+  ];
 
   const CATEGORY_META = {
     class:   { label: 'CLASS',   name: '课程', color: '#E56A2E', ink: '#151515' },
@@ -91,8 +102,8 @@
     nextTaskName: $('nextTaskName'), nextTaskRange: $('nextTaskRange'), nextTaskCategory: $('nextTaskCategory'),
     nextStartsIn: $('nextStartsIn'), scheduleList: $('scheduleList'), dayProgress: $('dayProgress'), systemDate: $('systemDate'),
     activeTemplateSelect: $('activeTemplateSelect'), startTodayBtn: $('startTodayBtn'), installAppBtn: $('installAppBtn'), todayBtn: $('todayBtn'),
-    editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), simulateBtn: $('simulateBtn'),
-    scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), simulateDialog: $('simulateDialog'),
+    weekPlanBtn: $('weekPlanBtn'), editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), simulateBtn: $('simulateBtn'),
+    scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), weekPlanDialog: $('weekPlanDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), simulateDialog: $('simulateDialog'),
     editorTemplateSelect: $('editorTemplateSelect'), templateNameInput: $('templateNameInput'), scheduleRows: $('scheduleRows'),
     scheduleError: $('scheduleError'), addTaskBtn: $('addTaskBtn'), saveScheduleBtn: $('saveScheduleBtn'),
     newTemplateBtn: $('newTemplateBtn'), duplicateTemplateBtn: $('duplicateTemplateBtn'), deleteTemplateBtn: $('deleteTemplateBtn'),
@@ -107,7 +118,8 @@
     transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'),
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
     todayStatusLabel: $('todayStatusLabel'), todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
-    addTodayTaskBtn: $('addTodayTaskBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn')
+    addTodayTaskBtn: $('addTodayTaskBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
+    weekPlanEnabledInput: $('weekPlanEnabledInput'), weekPlanRows: $('weekPlanRows'), weekPlanMessage: $('weekPlanMessage'), saveWeekPlanBtn: $('saveWeekPlanBtn')
   };
 
   let templates = loadTemplates();
@@ -117,6 +129,7 @@
   let todayEditorContext = null;
   let simulation = null;
   let lastStateKey = null;
+  let lastTemplateUiKey = null;
 
   // PWA install prompt is supplied by Chromium when the app meets installability
   // requirements. We keep it only for the current page session.
@@ -415,7 +428,7 @@
 
   function getScheduleSource(now = getNow()) {
     const date = formatDate(now);
-    const template = getActiveTemplate();
+    const template = getActiveTemplate(now);
     const override = getDailyOverride(date, template.id);
     return {
       date,
@@ -433,13 +446,30 @@
     return JSON.stringify(simplify(a)) === JSON.stringify(simplify(b));
   }
 
+  function normalizeWeekPlan(rawWeekPlan, fallbackTemplateId) {
+    const validTemplateIds = new Set(templates.map(template => template.id));
+    const days = {};
+    for (const day of WEEK_DAYS) {
+      const requested = rawWeekPlan?.days?.[day.key];
+      days[day.key] = requested === OFF_TEMPLATE_ID || validTemplateIds.has(requested)
+        ? requested
+        : fallbackTemplateId;
+    }
+    return {
+      enabled: rawWeekPlan?.enabled === true,
+      days
+    };
+  }
+
   function loadSettings() {
     let parsed = {};
     try { parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)) || {}; } catch (_) {}
     const activeExists = templates.some(t => t.id === parsed.activeTemplateId);
+    const activeTemplateId = activeExists ? parsed.activeTemplateId : templates[0].id;
     const rawVolume = Number(parsed.sound?.volume);
     return {
-      activeTemplateId: activeExists ? parsed.activeTemplateId : templates[0].id,
+      activeTemplateId,
+      weekPlan: normalizeWeekPlan(parsed.weekPlan, activeTemplateId),
       sound: {
         enabled: parsed.sound?.enabled !== false,
         volume: Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.8,
@@ -458,8 +488,22 @@
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
   }
 
-  function getActiveTemplate() {
+  function getManualActiveTemplate() {
     return templates.find(t => t.id === settings.activeTemplateId) || templates[0];
+  }
+
+  function getTemplateById(templateId) {
+    if (templateId === OFF_TEMPLATE_ID) return OFF_TEMPLATE;
+    return templates.find(template => template.id === templateId) || null;
+  }
+
+  function getActiveTemplate(now = getNow()) {
+    if (settings.weekPlan?.enabled) {
+      const mappedId = settings.weekPlan.days?.[String(now.getDay())];
+      const mappedTemplate = getTemplateById(mappedId);
+      if (mappedTemplate) return mappedTemplate;
+    }
+    return getManualActiveTemplate();
   }
 
   function timeToSeconds(time) {
@@ -530,7 +574,7 @@
     soundRuntime.lastObserved = {
       date: formatDate(now),
       sec: getSecondsOfDay(now),
-      templateId: settings.activeTemplateId,
+      templateId: source.template.id,
       scheduleKey: source.scheduleKey,
       simulation: !!simulation
     };
@@ -541,7 +585,7 @@
     const current = {
       date: formatDate(now),
       sec: getSecondsOfDay(now),
-      templateId: settings.activeTemplateId,
+      templateId: source.template.id,
       scheduleKey: source.scheduleKey,
       simulation: !!simulation
     };
@@ -710,6 +754,7 @@
     renderNext(state, sec);
     renderSchedule(state, sec);
     renderTodayIndicator(now);
+    renderWeekPlanRuntimeUi(now);
     renderRunButton();
   }
 
@@ -887,19 +932,98 @@
     requestAnimationFrame(scheduleCruiseFrame);
   }
 
-  function refreshTemplateSelects() {
-    const selects = [els.activeTemplateSelect, els.editorTemplateSelect];
-    for (const select of selects) {
-      const selected = select === els.activeTemplateSelect ? settings.activeTemplateId : editorTemplateId;
-      select.replaceChildren();
-      for (const template of templates) {
-        const option = document.createElement('option');
-        option.value = template.id;
-        option.textContent = template.name;
-        if (template.id === selected) option.selected = true;
-        select.appendChild(option);
-      }
+  function fillTemplateSelect(select, selectedId, { includeOff = false } = {}) {
+    select.replaceChildren();
+    if (includeOff) {
+      const off = document.createElement('option');
+      off.value = OFF_TEMPLATE_ID;
+      off.textContent = 'OFF / NO SCHEDULE';
+      if (selectedId === OFF_TEMPLATE_ID) off.selected = true;
+      select.appendChild(off);
     }
+    for (const template of templates) {
+      const option = document.createElement('option');
+      option.value = template.id;
+      option.textContent = template.name;
+      if (template.id === selectedId) option.selected = true;
+      select.appendChild(option);
+    }
+  }
+
+  function refreshTemplateSelects(now = getNow()) {
+    const effective = getActiveTemplate(now);
+    fillTemplateSelect(els.activeTemplateSelect, settings.weekPlan?.enabled ? effective.id : settings.activeTemplateId, { includeOff: settings.weekPlan?.enabled });
+    els.activeTemplateSelect.disabled = !!settings.weekPlan?.enabled;
+    els.activeTemplateSelect.title = settings.weekPlan?.enabled
+      ? 'WEEK PLAN 已启用；模板由星期自动选择。'
+      : '手动选择当前模板。';
+    fillTemplateSelect(els.editorTemplateSelect, editorTemplateId);
+  }
+
+  function renderWeekPlanRuntimeUi(now = getNow()) {
+    const effective = getActiveTemplate(now);
+    const key = `${formatDate(now)}|${settings.weekPlan?.enabled ? 'auto' : 'manual'}|${effective.id}|${settings.activeTemplateId}`;
+    if (key !== lastTemplateUiKey) {
+      lastTemplateUiKey = key;
+      refreshTemplateSelects(now);
+    }
+    els.weekPlanBtn.textContent = settings.weekPlan?.enabled ? 'WEEK*' : 'WEEK';
+    els.weekPlanBtn.classList.toggle('week-enabled', !!settings.weekPlan?.enabled);
+    els.weekPlanBtn.title = settings.weekPlan?.enabled
+      ? `自动周计划已启用 // 今日：${effective.name}`
+      : '配置每周自动模板';
+  }
+
+  function renderWeekPlanEditor() {
+    els.weekPlanEnabledInput.checked = !!settings.weekPlan?.enabled;
+    els.weekPlanRows.replaceChildren();
+    const todayKey = String(getNow().getDay());
+
+    for (const day of WEEK_DAYS) {
+      const row = document.createElement('div');
+      row.className = 'week-plan-row';
+      if (day.key === todayKey) row.classList.add('is-today');
+
+      const label = document.createElement('div');
+      label.className = 'week-day-label';
+      label.innerHTML = `<strong>${day.en}</strong><span>${day.zh}</span>`;
+
+      const select = document.createElement('select');
+      select.className = 'week-template-select';
+      select.dataset.day = day.key;
+      fillTemplateSelect(select, settings.weekPlan?.days?.[day.key] || settings.activeTemplateId, { includeOff: true });
+
+      row.append(label, select);
+      els.weekPlanRows.appendChild(row);
+    }
+    els.weekPlanMessage.hidden = true;
+  }
+
+  function saveWeekPlan() {
+    const days = {};
+    const validIds = new Set([OFF_TEMPLATE_ID, ...templates.map(template => template.id)]);
+    for (const select of els.weekPlanRows.querySelectorAll('.week-template-select')) {
+      if (!validIds.has(select.value)) {
+        els.weekPlanMessage.textContent = '周计划包含已经不存在的模板，请重新选择。';
+        els.weekPlanMessage.hidden = false;
+        els.weekPlanMessage.classList.remove('success');
+        return;
+      }
+      days[select.dataset.day] = select.value;
+    }
+
+    settings.weekPlan = {
+      enabled: els.weekPlanEnabledInput.checked,
+      days
+    };
+    saveAll();
+    lastStateKey = null;
+    lastTemplateUiKey = null;
+    scheduleCruise.renderKey = null;
+    resetScheduleCruise(true);
+    resetSoundEventCursor();
+    render();
+    els.weekPlanDialog.close();
   }
 
   function renderEditor() {
@@ -965,6 +1089,7 @@
     template.name = name;
     template.tasks = tasks.sort((a,b) => timeToSeconds(a.start)-timeToSeconds(b.start));
     saveAll();
+    lastTemplateUiKey = null;
     refreshTemplateSelects();
     resetSoundEventCursor();
     render();
@@ -1005,7 +1130,12 @@
     }
     saveDailyOverrides();
     if (settings.activeTemplateId === deletedTemplateId) settings.activeTemplateId = templates[0].id;
-    editorTemplateId = settings.activeTemplateId;
+    for (const day of WEEK_DAYS) {
+      if (settings.weekPlan?.days?.[day.key] === deletedTemplateId) settings.weekPlan.days[day.key] = OFF_TEMPLATE_ID;
+    }
+    const effectiveAfterDelete = getActiveTemplate();
+    editorTemplateId = effectiveAfterDelete.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : effectiveAfterDelete.id;
+    lastTemplateUiKey = null;
     saveAll();
     renderEditor();
     render();
@@ -1014,7 +1144,7 @@
   function renderTodayEditor() {
     const now = getNow();
     const date = formatDate(now);
-    const template = getActiveTemplate();
+    const template = getActiveTemplate(now);
     const override = getDailyOverride(date, template.id);
     const tasks = deepClone(override ? override.tasks : template.tasks)
       .sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
@@ -1093,7 +1223,7 @@
 
   function saveTodayOverride() {
     if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
-    const template = templates.find(t => t.id === todayEditorContext.templateId);
+    const template = getTemplateById(todayEditorContext.templateId);
     if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
 
     const tasks = collectTodayTasks();
@@ -1113,7 +1243,7 @@
 
   function resetTodayOverride() {
     if (!todayEditorContext) return;
-    const template = templates.find(t => t.id === todayEditorContext.templateId);
+    const template = getTemplateById(todayEditorContext.templateId);
     if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
     const hasOverride = !!getDailyOverride(todayEditorContext.date, template.id);
     const hasUnsavedChanges = !tasksEquivalent(collectTodayTasks(), template.tasks);
@@ -1169,7 +1299,7 @@
     const payload = {
       app: 'TEMPO-7',
       appVersion: APP_VERSION,
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: new Date().toISOString(),
       templates,
       settings,
@@ -1184,13 +1314,13 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showDataMessage('备份已导出，包含模板、设置与 TODAY OVERRIDE。', true);
+    showDataMessage('备份已导出，包含模板、周计划、设置与 TODAY OVERRIDE。', true);
   }
 
   function normalizeImportedOverrides(rawOverrides, importedTemplates) {
     const result = {};
     if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) return result;
-    const templateIds = new Set(importedTemplates.map(template => template.id));
+    const templateIds = new Set([OFF_TEMPLATE_ID, ...importedTemplates.map(template => template.id)]);
 
     for (const [date, byTemplate] of Object.entries(rawOverrides)) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !byTemplate || typeof byTemplate !== 'object' || Array.isArray(byTemplate)) continue;
@@ -1231,15 +1361,18 @@
 
       const requestedId = payload.settings?.activeTemplateId;
       const importedVolume = Number(payload.settings?.sound?.volume);
+      const importedActiveId = templates.some(t => t.id === requestedId) ? requestedId : templates[0].id;
       settings = {
-        activeTemplateId: templates.some(t => t.id === requestedId) ? requestedId : templates[0].id,
+        activeTemplateId: importedActiveId,
+        weekPlan: normalizeWeekPlan(payload.settings?.weekPlan, importedActiveId),
         sound: {
           enabled: payload.settings?.sound?.enabled !== false,
           volume: Number.isFinite(importedVolume) ? Math.min(1, Math.max(0, importedVolume)) : 0.8,
           bindings: { class: { start: SOUND_ASSETS.classStart, end: SOUND_ASSETS.classEnd } }
         }
       };
-      editorTemplateId = settings.activeTemplateId;
+      const importedEffective = getActiveTemplate();
+      editorTemplateId = importedEffective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : importedEffective.id;
       saveAll();
       saveDailyOverrides();
       refreshTemplateSelects();
@@ -1247,7 +1380,7 @@
       scheduleCruise.renderKey = null;
       resetSoundEventCursor();
       render();
-      showDataMessage(`已导入 ${templates.length} 个模板和 TODAY OVERRIDE。`, true);
+      showDataMessage(`已导入 ${templates.length} 个模板、周计划和 TODAY OVERRIDE。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -1338,6 +1471,7 @@
     els.activeTemplateSelect.addEventListener('change', () => {
       settings.activeTemplateId = els.activeTemplateSelect.value;
       editorTemplateId = settings.activeTemplateId;
+      lastTemplateUiKey = null;
       saveAll();
       lastStateKey = null;
       scheduleCruise.renderKey = null;
@@ -1351,8 +1485,14 @@
       renderTodayEditor();
       els.todayDialog.showModal();
     });
+    els.weekPlanBtn.addEventListener('click', () => {
+      renderWeekPlanEditor();
+      els.weekPlanDialog.showModal();
+    });
+    els.saveWeekPlanBtn.addEventListener('click', saveWeekPlan);
     els.editScheduleBtn.addEventListener('click', () => {
-      editorTemplateId = settings.activeTemplateId;
+      const effective = getActiveTemplate();
+      editorTemplateId = effective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : effective.id;
       renderEditor();
       els.scheduleDialog.showModal();
     });

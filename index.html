@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.4.0" />
+  <link rel="stylesheet" href="style.css?v=0.5.0" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -21,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.4.0</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.5.0</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -32,6 +32,7 @@
       <button id="startTodayBtn" class="btn btn-primary">START TODAY</button>
       <button id="installAppBtn" class="btn" hidden>INSTALL</button>
       <button id="todayBtn" class="btn">TODAY</button>
+      <button id="weekPlanBtn" class="btn">WEEK</button>
       <button id="editScheduleBtn" class="btn">EDIT</button>
       <button id="dataBtn" class="btn">DATA</button>
       <button id="soundBtn" class="btn">SOUND</button>
@@ -181,6 +182,33 @@
     </form>
   </dialog>
 
+  <dialog id="weekPlanDialog" class="modal">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">WEEK PLAN</div>
+          <h2>周计划</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <p class="modal-copy">启用后，TEMPO-7 会按星期自动选择基础模板。OFF / NO SCHEDULE 表示当天没有基础日程；即使是 OFF，当天仍可通过 TODAY 临时添加任务。</p>
+
+      <label class="switch-field week-master-switch">
+        <input id="weekPlanEnabledInput" type="checkbox" />
+        <span>ENABLE WEEK PLAN</span>
+      </label>
+
+      <div id="weekPlanRows" class="week-plan-rows"></div>
+      <div id="weekPlanMessage" class="message-box" hidden></div>
+
+      <div class="modal-actions">
+        <button class="btn" value="cancel">CANCEL</button>
+        <button type="button" id="saveWeekPlanBtn" class="btn btn-primary">SAVE WEEK PLAN</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dataDialog" class="modal">
     <form method="dialog" class="modal-frame">
       <div class="modal-titlebar">
@@ -191,7 +219,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.4.0 会把模板、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.5.0 会把模板、周计划、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
 
       <div class="data-actions">
         <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT JSON</button>
@@ -322,6 +350,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.4.0"></script>
+  <script src="app.js?v=0.5.0"></script>
 </body>
 </html>
