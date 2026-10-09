@@ -1,10 +1,10 @@
-const CACHE_NAME = 'tempo7-v0.5.0';
+const CACHE_NAME = 'tempo7-v0.6.0';
 
 const APP_SHELL = [
   './',
   './index.html',
-  './style.css?v=0.5.0',
-  './app.js?v=0.5.0',
+  './style.css?v=0.6.0',
+  './app.js?v=0.6.0',
   './manifest.webmanifest',
   './favicon.ico',
   './favicon.png',

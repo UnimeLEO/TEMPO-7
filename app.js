@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.5.0';
+  const APP_VERSION = '0.6.0';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -44,6 +44,47 @@
     free:    { label: 'FREE',    name: '空档', color: '#737B82', ink: '#111315' },
     ended:   { label: 'END',     name: '结束', color: '#4D5359', ink: '#F1F2F0' }
   };
+
+  const DEFAULT_APPEARANCE = {
+    surfaces: {
+      bg: '#17191C',
+      topbar: '#141619',
+      panel: '#202328',
+      panel2: '#1C1F23',
+      line: '#3A3F45',
+      text: '#F1F2F0',
+      muted: '#A3A8AD'
+    },
+    states: {
+      class: '#E56A2E',
+      break: '#5B8FA8',
+      meal: '#CDA15B',
+      routine: '#94999F',
+      rest: '#78A09A',
+      custom: '#9A82B8',
+      free: '#737B82',
+      ended: '#4D5359'
+    },
+    transition: 'flash'
+  };
+
+  const APPEARANCE_FIELDS = [
+    ['surfaces', 'bg', 'appearanceBgInput', 'appearanceBgValue'],
+    ['surfaces', 'topbar', 'appearanceTopbarInput', 'appearanceTopbarValue'],
+    ['surfaces', 'panel', 'appearancePanelInput', 'appearancePanelValue'],
+    ['surfaces', 'panel2', 'appearancePanel2Input', 'appearancePanel2Value'],
+    ['surfaces', 'line', 'appearanceLineInput', 'appearanceLineValue'],
+    ['surfaces', 'text', 'appearanceTextInput', 'appearanceTextValue'],
+    ['surfaces', 'muted', 'appearanceMutedInput', 'appearanceMutedValue'],
+    ['states', 'class', 'appearanceClassInput', 'appearanceClassValue'],
+    ['states', 'break', 'appearanceBreakInput', 'appearanceBreakValue'],
+    ['states', 'meal', 'appearanceMealInput', 'appearanceMealValue'],
+    ['states', 'routine', 'appearanceRoutineInput', 'appearanceRoutineValue'],
+    ['states', 'rest', 'appearanceRestInput', 'appearanceRestValue'],
+    ['states', 'custom', 'appearanceCustomInput', 'appearanceCustomValue'],
+    ['states', 'free', 'appearanceFreeInput', 'appearanceFreeValue'],
+    ['states', 'ended', 'appearanceEndedInput', 'appearanceEndedValue']
+  ];
 
   const SCHEDULE_CRUISE = {
     speedPxPerSecond: 16,
@@ -102,8 +143,8 @@
     nextTaskName: $('nextTaskName'), nextTaskRange: $('nextTaskRange'), nextTaskCategory: $('nextTaskCategory'),
     nextStartsIn: $('nextStartsIn'), scheduleList: $('scheduleList'), dayProgress: $('dayProgress'), systemDate: $('systemDate'),
     activeTemplateSelect: $('activeTemplateSelect'), startTodayBtn: $('startTodayBtn'), installAppBtn: $('installAppBtn'), todayBtn: $('todayBtn'),
-    weekPlanBtn: $('weekPlanBtn'), editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), simulateBtn: $('simulateBtn'),
-    scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), weekPlanDialog: $('weekPlanDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), simulateDialog: $('simulateDialog'),
+    weekPlanBtn: $('weekPlanBtn'), editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), appearanceBtn: $('appearanceBtn'),
+    scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), weekPlanDialog: $('weekPlanDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), appearanceDialog: $('appearanceDialog'),
     editorTemplateSelect: $('editorTemplateSelect'), templateNameInput: $('templateNameInput'), scheduleRows: $('scheduleRows'),
     scheduleError: $('scheduleError'), addTaskBtn: $('addTaskBtn'), saveScheduleBtn: $('saveScheduleBtn'),
     newTemplateBtn: $('newTemplateBtn'), duplicateTemplateBtn: $('duplicateTemplateBtn'), deleteTemplateBtn: $('deleteTemplateBtn'),
@@ -113,8 +154,8 @@
     classStartSoundName: $('classStartSoundName'), classEndSoundName: $('classEndSoundName'),
     previewClassStartBtn: $('previewClassStartBtn'), previewClassEndBtn: $('previewClassEndBtn'),
     clearClassStartBtn: $('clearClassStartBtn'), clearClassEndBtn: $('clearClassEndBtn'), soundMessage: $('soundMessage'),
-    simulationTimeInput: $('simulationTimeInput'), startSimulationBtn: $('startSimulationBtn'),
-    simulationBanner: $('simulationBanner'), simulationClock: $('simulationClock'), exitSimulationBtn: $('exitSimulationBtn'),
+    appearanceTransitionInput: $('appearanceTransitionInput'), appearanceMessage: $('appearanceMessage'),
+    resetAppearanceBtn: $('resetAppearanceBtn'), saveAppearanceBtn: $('saveAppearanceBtn'),
     transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'),
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
     todayStatusLabel: $('todayStatusLabel'), todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
@@ -127,7 +168,8 @@
   let dailyOverrides = loadDailyOverrides();
   let editorTemplateId = settings.activeTemplateId;
   let todayEditorContext = null;
-  let simulation = null;
+  let appearanceDraft = null;
+  let appearanceSavedThisOpen = false;
   let lastStateKey = null;
   let lastTemplateUiKey = null;
 
@@ -139,8 +181,7 @@
     audioContext: null,
     unlocked: false,
     buffers: new Map(),
-    lastObserved: null,
-    simulationTriggerLog: new Set()
+    lastObserved: null
   };
 
   function deepClone(value) {
@@ -337,6 +378,114 @@
     }
   }
 
+  function normalizeHex(value, fallback) {
+    const text = String(value || '').trim().toUpperCase();
+    return /^#[0-9A-F]{6}$/.test(text) ? text : fallback;
+  }
+
+  function normalizeAppearance(raw) {
+    const defaults = deepClone(DEFAULT_APPEARANCE);
+    for (const key of Object.keys(defaults.surfaces)) {
+      defaults.surfaces[key] = normalizeHex(raw?.surfaces?.[key], defaults.surfaces[key]);
+    }
+    for (const key of Object.keys(defaults.states)) {
+      defaults.states[key] = normalizeHex(raw?.states?.[key], defaults.states[key]);
+    }
+    defaults.transition = ['flash', 'soft', 'none'].includes(raw?.transition) ? raw.transition : 'flash';
+    return defaults;
+  }
+
+  function contrastInk(hex) {
+    const clean = normalizeHex(hex, '#777777').slice(1);
+    const r = parseInt(clean.slice(0, 2), 16) / 255;
+    const g = parseInt(clean.slice(2, 4), 16) / 255;
+    const b = parseInt(clean.slice(4, 6), 16) / 255;
+    const linear = v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    const luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    return luminance > 0.42 ? '#111315' : '#F1F2F0';
+  }
+
+  function adjustHex(hex, amount) {
+    const clean = normalizeHex(hex, '#202328').slice(1);
+    const parts = [0, 2, 4].map(i => Math.max(0, Math.min(255, parseInt(clean.slice(i, i + 2), 16) + amount)));
+    return `#${parts.map(v => v.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  }
+
+  function getCategoryMeta(category, appearance = appearanceDraft || settings.appearance) {
+    const base = CATEGORY_META[category] || CATEGORY_META.custom;
+    const color = appearance?.states?.[category] || base.color;
+    return { ...base, color, ink: contrastInk(color) };
+  }
+
+  function applyAppearance(appearance = settings.appearance) {
+    const normalized = normalizeAppearance(appearance);
+    const root = document.documentElement;
+    root.style.setProperty('--bg', normalized.surfaces.bg);
+    root.style.setProperty('--topbar', normalized.surfaces.topbar);
+    root.style.setProperty('--panel', normalized.surfaces.panel);
+    root.style.setProperty('--panel-2', normalized.surfaces.panel2);
+    root.style.setProperty('--control', normalized.surfaces.panel2);
+    root.style.setProperty('--control-hover', adjustHex(normalized.surfaces.panel2, 14));
+    root.style.setProperty('--line', normalized.surfaces.line);
+    root.style.setProperty('--text', normalized.surfaces.text);
+    root.style.setProperty('--muted', normalized.surfaces.muted);
+    root.dataset.transition = normalized.transition;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', normalized.surfaces.topbar);
+
+    const activeCategory = els.hero?.dataset?.state || 'free';
+    const meta = getCategoryMeta(activeCategory, normalized);
+    els.hero?.style.setProperty('--accent', meta.color);
+    els.hero?.style.setProperty('--accent-ink', meta.ink);
+    root.style.setProperty('--accent', meta.color);
+    root.style.setProperty('--accent-ink', meta.ink);
+  }
+
+  function renderAppearanceEditor() {
+    if (!appearanceDraft) appearanceDraft = deepClone(settings.appearance);
+    for (const [section, key, inputId, valueId] of APPEARANCE_FIELDS) {
+      const input = $(inputId);
+      const value = $(valueId);
+      const color = appearanceDraft[section][key];
+      input.value = color;
+      value.textContent = color;
+    }
+    els.appearanceTransitionInput.value = appearanceDraft.transition;
+    els.appearanceMessage.hidden = true;
+  }
+
+  function updateAppearanceDraft(section, key, value, valueId) {
+    if (!appearanceDraft) appearanceDraft = deepClone(settings.appearance);
+    appearanceDraft[section][key] = normalizeHex(value, appearanceDraft[section][key]);
+    $(valueId).textContent = appearanceDraft[section][key];
+    applyAppearance(appearanceDraft);
+  }
+
+  function openAppearanceEditor() {
+    appearanceDraft = deepClone(settings.appearance);
+    appearanceSavedThisOpen = false;
+    renderAppearanceEditor();
+    els.appearanceDialog.showModal();
+  }
+
+  function saveAppearance() {
+    appearanceDraft.transition = els.appearanceTransitionInput.value;
+    settings.appearance = normalizeAppearance(appearanceDraft);
+    saveAll();
+    applyAppearance(settings.appearance);
+    appearanceSavedThisOpen = true;
+    els.appearanceMessage.textContent = '外观设置已保存。';
+    els.appearanceMessage.hidden = false;
+    setTimeout(() => els.appearanceDialog.close(), 120);
+  }
+
+  function resetAppearanceDraft() {
+    appearanceDraft = deepClone(DEFAULT_APPEARANCE);
+    renderAppearanceEditor();
+    applyAppearance(appearanceDraft);
+    els.appearanceMessage.textContent = '已恢复默认外观预览；点击 SAVE APPEARANCE 后才会保存。';
+    els.appearanceMessage.hidden = false;
+  }
+
   function normalizeTask(task) {
     return {
       id: task?.id || makeId('task'),
@@ -470,6 +619,7 @@
     return {
       activeTemplateId,
       weekPlan: normalizeWeekPlan(parsed.weekPlan, activeTemplateId),
+      appearance: normalizeAppearance(parsed.appearance),
       sound: {
         enabled: parsed.sound?.enabled !== false,
         volume: Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.8,
@@ -521,8 +671,7 @@
   }
 
   function getNow() {
-    if (!simulation) return new Date();
-    return new Date(simulation.baseSimMs + (Date.now() - simulation.baseRealMs));
+    return new Date();
   }
 
   function getSecondsOfDay(date) {
@@ -575,8 +724,7 @@
       date: formatDate(now),
       sec: getSecondsOfDay(now),
       templateId: source.template.id,
-      scheduleKey: source.scheduleKey,
-      simulation: !!simulation
+      scheduleKey: source.scheduleKey
     };
   }
 
@@ -586,8 +734,7 @@
       date: formatDate(now),
       sec: getSecondsOfDay(now),
       templateId: source.template.id,
-      scheduleKey: source.scheduleKey,
-      simulation: !!simulation
+      scheduleKey: source.scheduleKey
     };
     const previous = soundRuntime.lastObserved;
 
@@ -599,7 +746,6 @@
     const incompatible = previous.date !== current.date ||
       previous.templateId !== current.templateId ||
       previous.scheduleKey !== current.scheduleKey ||
-      previous.simulation !== current.simulation ||
       current.sec < previous.sec;
 
     const delta = current.sec - previous.sec;
@@ -617,14 +763,14 @@
     const crossed = getSoundEvents(source).filter(event => event.timeSec > previous.sec && event.timeSec <= current.sec);
     if (!crossed.length) return;
 
-    const log = simulation ? soundRuntime.simulationTriggerLog : loadRealTriggerLog(current.date);
+    const log = loadRealTriggerLog(current.date);
     for (const event of crossed) {
       const key = `${current.date}|${source.template.id}|${event.id}`;
       if (log.has(key)) continue;
       log.add(key);
       playSoundAsset(event.assetId);
     }
-    if (!simulation) saveRealTriggerLog(current.date, log);
+    saveRealTriggerLog(current.date, log);
   }
 
   function getScheduleState(now = getNow()) {
@@ -680,7 +826,7 @@
   }
 
   function applyCategory(category) {
-    const meta = CATEGORY_META[category] || CATEGORY_META.custom;
+    const meta = getCategoryMeta(category);
     els.hero.style.setProperty('--accent', meta.color);
     els.hero.style.setProperty('--accent-ink', meta.ink);
     document.documentElement.style.setProperty('--accent', meta.color);
@@ -690,6 +836,7 @@
   }
 
   function flashStateChange() {
+    if ((appearanceDraft || settings.appearance)?.transition !== 'flash') return;
     els.transitionFlash.classList.remove('flash');
     void els.transitionFlash.offsetWidth;
     els.transitionFlash.classList.add('flash');
@@ -702,7 +849,6 @@
     processSoundEvents(now);
 
     els.systemDate.textContent = `${formatDate(now)} ${formatClock(now)}`;
-    if (simulation) els.simulationClock.textContent = formatClock(now);
 
     let category = 'ended';
     let stateKey = 'ended';
@@ -775,7 +921,7 @@
       return;
     }
     const delta = Math.max(0, timeToSeconds(next.start) - sec);
-    const meta = CATEGORY_META[next.category] || CATEGORY_META.custom;
+    const meta = getCategoryMeta(next.category);
     els.nextTaskName.textContent = next.name;
     els.nextTaskRange.textContent = `${next.start} — ${next.end}`;
     els.nextTaskCategory.textContent = `${meta.label} / ${meta.name}`;
@@ -807,7 +953,7 @@
     }
 
     for (const task of upcoming) {
-      const meta = CATEGORY_META[task.category] || CATEGORY_META.custom;
+      const meta = getCategoryMeta(task.category);
       const item = document.createElement('div');
       item.className = 'schedule-item';
       const time = document.createElement('div');
@@ -1299,7 +1445,7 @@
     const payload = {
       app: 'TEMPO-7',
       appVersion: APP_VERSION,
-      schemaVersion: 3,
+      schemaVersion: 4,
       exportedAt: new Date().toISOString(),
       templates,
       settings,
@@ -1314,7 +1460,7 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showDataMessage('备份已导出，包含模板、周计划、设置与 TODAY OVERRIDE。', true);
+    showDataMessage('备份已导出，包含模板、周计划、外观设置、铃声设置与 TODAY OVERRIDE。', true);
   }
 
   function normalizeImportedOverrides(rawOverrides, importedTemplates) {
@@ -1365,6 +1511,7 @@
       settings = {
         activeTemplateId: importedActiveId,
         weekPlan: normalizeWeekPlan(payload.settings?.weekPlan, importedActiveId),
+        appearance: normalizeAppearance(payload.settings?.appearance),
         sound: {
           enabled: payload.settings?.sound?.enabled !== false,
           volume: Number.isFinite(importedVolume) ? Math.min(1, Math.max(0, importedVolume)) : 0.8,
@@ -1380,7 +1527,8 @@
       scheduleCruise.renderKey = null;
       resetSoundEventCursor();
       render();
-      showDataMessage(`已导入 ${templates.length} 个模板、周计划和 TODAY OVERRIDE。`, true);
+      applyAppearance(settings.appearance);
+      showDataMessage(`已导入 ${templates.length} 个模板、周计划、外观设置和 TODAY OVERRIDE。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -1392,30 +1540,6 @@
     els.dataMessage.textContent = message;
     els.dataMessage.hidden = false;
     els.dataMessage.classList.toggle('success', !!success);
-  }
-
-  function startSimulation() {
-    const value = els.simulationTimeInput.value;
-    if (!value) return;
-    const [h, m, s = '0'] = value.split(':').map(Number);
-    const base = new Date();
-    base.setHours(h, m, s, 0);
-    simulation = { baseSimMs: base.getTime(), baseRealMs: Date.now() };
-    els.simulationBanner.hidden = false;
-    els.simulateDialog.close();
-    lastStateKey = null;
-    soundRuntime.simulationTriggerLog.clear();
-    resetSoundEventCursor();
-    render();
-  }
-
-  function exitSimulation() {
-    simulation = null;
-    els.simulationBanner.hidden = true;
-    lastStateKey = null;
-    soundRuntime.simulationTriggerLog.clear();
-    resetSoundEventCursor();
-    render();
   }
 
   function isStandaloneMode() {
@@ -1505,10 +1629,7 @@
       refreshSoundUi();
       els.soundDialog.showModal();
     });
-    els.simulateBtn.addEventListener('click', () => {
-      els.simulationTimeInput.value = formatClock(getNow());
-      els.simulateDialog.showModal();
-    });
+    els.appearanceBtn.addEventListener('click', openAppearanceEditor);
 
     els.editorTemplateSelect.addEventListener('change', () => { editorTemplateId = els.editorTemplateSelect.value; renderEditor(); });
     els.addTaskBtn.addEventListener('click', () => addEditorRow());
@@ -1531,8 +1652,22 @@
       if (file) importJson(file);
     });
 
-    els.startSimulationBtn.addEventListener('click', startSimulation);
-    els.exitSimulationBtn.addEventListener('click', exitSimulation);
+    for (const [section, key, inputId, valueId] of APPEARANCE_FIELDS) {
+      $(inputId).addEventListener('input', event => updateAppearanceDraft(section, key, event.target.value, valueId));
+    }
+    els.appearanceTransitionInput.addEventListener('change', () => {
+      if (!appearanceDraft) appearanceDraft = deepClone(settings.appearance);
+      appearanceDraft.transition = els.appearanceTransitionInput.value;
+      applyAppearance(appearanceDraft);
+    });
+    els.resetAppearanceBtn.addEventListener('click', resetAppearanceDraft);
+    els.saveAppearanceBtn.addEventListener('click', saveAppearance);
+    els.appearanceDialog.addEventListener('close', () => {
+      if (!appearanceSavedThisOpen) applyAppearance(settings.appearance);
+      appearanceDraft = null;
+      appearanceSavedThisOpen = false;
+      render();
+    });
 
     els.soundEnabledInput.addEventListener('change', () => {
       settings.sound.enabled = els.soundEnabledInput.checked;
@@ -1581,6 +1716,7 @@
   }
 
   function init() {
+    applyAppearance(settings.appearance);
     refreshTemplateSelects();
     bindPwaEvents();
     bindEvents();

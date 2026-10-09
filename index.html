@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.5.0" />
+  <link rel="stylesheet" href="style.css?v=0.6.0" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -21,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.5.0</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.6.0</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -36,7 +36,7 @@
       <button id="editScheduleBtn" class="btn">EDIT</button>
       <button id="dataBtn" class="btn">DATA</button>
       <button id="soundBtn" class="btn">SOUND</button>
-      <button id="simulateBtn" class="btn">SIM TIME</button>
+      <button id="appearanceBtn" class="btn">LOOK</button>
     </div>
   </header>
 
@@ -93,11 +93,7 @@
     </section>
   </main>
 
-  <div id="simulationBanner" class="simulation-banner" hidden>
-    <span>SIMULATED TIME ACTIVE</span>
-    <strong id="simulationClock">--:--:--</strong>
-    <button id="exitSimulationBtn" class="btn btn-danger">EXIT SIMULATION</button>
-  </div>
+
 
   <dialog id="scheduleDialog" class="modal modal-wide">
     <form method="dialog" class="modal-frame" id="scheduleForm">
@@ -219,7 +215,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.5.0 会把模板、周计划、设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把日程与设置保存在当前浏览器中。JSON 用于备份、迁移或恢复，并不是每天都要重新导入。当前 v0.6.0 会把模板、周计划、外观设置、铃声设置与 TODAY OVERRIDE 一并写入 JSON；MP3 / WAV 文件仍保存在 IndexedDB 中，不随 JSON 备份导出。</p>
 
       <div class="data-actions">
         <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT JSON</button>
@@ -292,26 +288,70 @@
     </form>
   </dialog>
 
-  <dialog id="simulateDialog" class="modal">
+  <dialog id="appearanceDialog" class="modal modal-wide">
     <form method="dialog" class="modal-frame">
       <div class="modal-titlebar">
         <div>
-          <div class="eyebrow">TEST CLOCK</div>
-          <h2>模拟时间</h2>
+          <div class="eyebrow">APPEARANCE CONTROL</div>
+          <h2>外观系统</h2>
         </div>
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">模拟时间只在当前页面会话中有效，不会写入你的长期设置。启动后时钟会从所选时间继续正常向前走。</p>
+      <p class="modal-copy">颜色调整会在主界面实时预览；只有点击 SAVE APPEARANCE 才会长期保存。CANCEL 或直接关闭窗口会恢复已保存的外观。</p>
 
-      <label class="field">
-        <span>从这个时间开始</span>
-        <input id="simulationTimeInput" type="time" step="1" />
+      <div class="appearance-grid">
+        <section class="appearance-group">
+          <div class="appearance-group-title">
+            <span class="eyebrow">SURFACES</span>
+            <strong>界面底色</strong>
+          </div>
+          <div class="appearance-color-list">
+            <label class="appearance-color-row"><span>APP BACKGROUND</span><input id="appearanceBgInput" type="color" /><code id="appearanceBgValue">#17191C</code></label>
+            <label class="appearance-color-row"><span>TOP BAR</span><input id="appearanceTopbarInput" type="color" /><code id="appearanceTopbarValue">#141619</code></label>
+            <label class="appearance-color-row"><span>PANEL</span><input id="appearancePanelInput" type="color" /><code id="appearancePanelValue">#202328</code></label>
+            <label class="appearance-color-row"><span>ALT PANEL</span><input id="appearancePanel2Input" type="color" /><code id="appearancePanel2Value">#1C1F23</code></label>
+            <label class="appearance-color-row"><span>LINE</span><input id="appearanceLineInput" type="color" /><code id="appearanceLineValue">#3A3F45</code></label>
+            <label class="appearance-color-row"><span>TEXT</span><input id="appearanceTextInput" type="color" /><code id="appearanceTextValue">#F1F2F0</code></label>
+            <label class="appearance-color-row"><span>MUTED TEXT</span><input id="appearanceMutedInput" type="color" /><code id="appearanceMutedValue">#A3A8AD</code></label>
+          </div>
+        </section>
+
+        <section class="appearance-group">
+          <div class="appearance-group-title">
+            <span class="eyebrow">STATE PALETTE</span>
+            <strong>任务状态色</strong>
+          </div>
+          <div class="appearance-color-list appearance-state-list">
+            <label class="appearance-color-row"><span>CLASS / 课程</span><input id="appearanceClassInput" type="color" /><code id="appearanceClassValue">#E56A2E</code></label>
+            <label class="appearance-color-row"><span>BREAK / 课间</span><input id="appearanceBreakInput" type="color" /><code id="appearanceBreakValue">#5B8FA8</code></label>
+            <label class="appearance-color-row"><span>MEAL / 用餐</span><input id="appearanceMealInput" type="color" /><code id="appearanceMealValue">#CDA15B</code></label>
+            <label class="appearance-color-row"><span>ROUTINE / 日常</span><input id="appearanceRoutineInput" type="color" /><code id="appearanceRoutineValue">#94999F</code></label>
+            <label class="appearance-color-row"><span>REST / 休息</span><input id="appearanceRestInput" type="color" /><code id="appearanceRestValue">#78A09A</code></label>
+            <label class="appearance-color-row"><span>CUSTOM / 其他</span><input id="appearanceCustomInput" type="color" /><code id="appearanceCustomValue">#9A82B8</code></label>
+            <label class="appearance-color-row"><span>FREE / 空档</span><input id="appearanceFreeInput" type="color" /><code id="appearanceFreeValue">#737B82</code></label>
+            <label class="appearance-color-row"><span>END / 结束</span><input id="appearanceEndedInput" type="color" /><code id="appearanceEndedValue">#4D5359</code></label>
+          </div>
+        </section>
+      </div>
+
+      <label class="field appearance-transition-field">
+        <span>STATE TRANSITION</span>
+        <select id="appearanceTransitionInput">
+          <option value="flash">FLASH // 全屏瞬时闪烁 + 平滑换色</option>
+          <option value="soft">SOFT // 仅平滑换色</option>
+          <option value="none">NONE // 无切换动画</option>
+        </select>
       </label>
 
-      <div class="modal-actions">
-        <button class="btn" value="cancel">CANCEL</button>
-        <button type="button" id="startSimulationBtn" class="btn btn-primary">START SIMULATION</button>
+      <div id="appearanceMessage" class="message-box success" hidden></div>
+
+      <div class="modal-actions split-actions">
+        <button type="button" id="resetAppearanceBtn" class="btn btn-danger-outline">RESET DEFAULTS</button>
+        <div class="right-actions">
+          <button class="btn" value="cancel">CANCEL</button>
+          <button type="button" id="saveAppearanceBtn" class="btn btn-primary">SAVE APPEARANCE</button>
+        </div>
       </div>
     </form>
   </dialog>
@@ -350,6 +390,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.5.0"></script>
+  <script src="app.js?v=0.6.0"></script>
 </body>
 </html>
