@@ -1,11 +1,25 @@
-# TEMPO-7 v0.7.2 — PERFORMANCE OPTIMIZATION
+# TEMPO-7 v0.7.3 — CUSTOM TYPES / PER-TYPE BELLS / TASK NOTES
 
-TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放课程铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装和离线使用。
+TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
 
-v0.7.2 是一轮 **无意改变现有视觉和功能表现的性能整理**。核心目标是降低长期运行时不必要的 DOM 写入、localStorage 读取和动画帧占用，让倒计时、SCHEDULE 巡航、铃声监听和 PWA 长时间运行更平稳。
+v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内置 TYPE + 最多 6 个用户自定义 TYPE”，铃声系统同步升级为所有任务 TYPE 都可分别配置 ENTRY / EXIT 铃声，并为每个 TASK 新增可选的单行 NOTE。v0.7.2 的性能优化结构保持不变。
 
-v0.7.1 的 TODAY 工作流、v0.7.0 的完整备份与自托管 DINish 字体体系均保持不变。
 
+## v0.7.3 新增与调整
+
+- **自定义 TYPE**：在 EDIT 与 TODAY 中均可通过 `+ ADD NEW TYPE` 打开 TYPE CONTROL；除 6 个内置任务 TYPE 外，最多可额外创建 6 个自定义 TYPE。
+- **TYPE 属性**：每个自定义 TYPE 包含 NAME、LABEL 与 COLOR；NAME 用于自然语言显示，LABEL 用于状态标签，COLOR 直接驱动当前任务主区域颜色。
+- **TYPE 管理**：自定义 TYPE 可修改或删除。删除仍被模板 / TODAY Override 使用的 TYPE 时，会先提示；确认后相关任务迁移到内置 `CUSTOM / 其他`。
+- **所有 TYPE 可配置铃声**：SOUND 不再只服务 CLASS。每个内置或自定义任务 TYPE 都有独立的 `ENTRY` 与 `EXIT` 音频槽位，可导入 MP3 / WAV、试听或清除。
+- **CLASS 旧铃声兼容**：原有 `class-start` / `class-end` 音频 ID 保留，因此升级到 v0.7.3 后既有上课铃 / 下课铃不会因为新铃声架构而丢失。
+- **TASK NOTE**：模板编辑器与 TODAY 编辑器的每个任务行，在 TYPE 与删除 / SKIP 之间新增 `✎`；点击后展开单行 NOTE 编辑框。
+- **NOTE 限制**：NOTE 可为空，最多 200 字符，不支持换行；笔图标在已有 NOTE 时显示绿色提示。
+- **CURRENT NOTE**：当前任务有 NOTE 时，显示在任务大标题下方；空 NOTE 不占空间。
+- **NEXT / SCHEDULE NOTE**：下一任务和 SCHEDULE 中也显示更小的一行 NOTE。
+- **NOTE 跑马灯**：只有 NOTE 实际超过可用宽度时才启动横向滚动；到末端短暂停留后平滑返回，鼠标悬停时暂停。
+- **NOTE 随数据流转**：TODAY Override、TODAY JSON、SAVE AS TEMPLATE、模板复制、FULL BACKUP / IMPORT 都会保留 NOTE。
+- **FULL BACKUP schema v6**：完整备份新增自定义 TYPE 定义，并可备份所有 TYPE 的动态铃声音频；旧版无自定义 TYPE 的备份继续可导入。
+- **PWA 缓存更新**：Service Worker 缓存名与 CSS / JS cache-busting 升级至 v0.7.3。
 
 ## v0.7.2 性能优化
 
@@ -55,13 +69,44 @@ v0.7.1 的 TODAY 工作流、v0.7.0 的完整备份与自托管 DINish 字体体
 - 自动识别当前任务、空档 FREE TIME、NEXT 和今日剩余 SCHEDULE。
 - 主倒计时使用真实系统时间计算，不依赖逐秒递减，因此浏览器短暂降频后仍可自动校准。
 - SCHEDULE 慢速自动巡航；悬停暂停；手动滚动后延迟恢复；到底后平滑回顶。
-- CLASS 分类绑定上课铃 / 下课铃，可导入 MP3 / WAV，音频保存在 IndexedDB。
-- TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板；可导出单日 JSON，并可把当前 TODAY 内容另存为长期模板。
+- 所有任务 TYPE 均可配置独立 ENTRY / EXIT 铃声，可导入 MP3 / WAV，音频保存在 IndexedDB。
+- TODAY Override：当天可临时 EDIT / SKIP / ADD TASK，不改变基础模板；支持 TASK NOTE、自定义 TYPE、单日 JSON 导出与另存为长期模板。
 - WEEK PLAN：按周一至周日自动选择模板，也可设为 OFF / NO SCHEDULE；启用状态以绿色按钮显示。
-- LOOK：可配置界面底色、文字色、分类状态色及状态切换动画。
-- FULL BACKUP 导入 / 导出：模板、周计划、设置、外观、TODAY Override 与 MP3 / WAV 铃声音频可在一个 JSON 中完整迁移。
+- 自定义 TYPE：除内置分类外最多新增 6 个，每个 TYPE 自带 NAME / LABEL / COLOR。
+- TASK NOTE：每个任务可保存最多 200 字符的单行备注，并显示在 CURRENT / NEXT / SCHEDULE。
+- LOOK：可配置界面底色、文字色、内置分类状态色及状态切换动画；自定义 TYPE 颜色在 TYPE CONTROL 中管理。
+- FULL BACKUP 导入 / 导出：模板、自定义 TYPE、TASK NOTE、周计划、设置、外观、TODAY Override 与全部 TYPE 的 MP3 / WAV 铃声音频可在一个 JSON 中完整迁移。
 - PWA：可从 GitHub Pages 安装为独立窗口应用，并支持 App Shell 离线启动。
 - 自托管字体：英文 / 数字使用 DINish，中文使用 Source Han Sans CN Heavy。
+
+## 自定义 TYPE
+
+在 `EDIT` 或 `TODAY` 中点击 `+ ADD NEW TYPE`：
+
+1. 最多创建 6 个用户自定义 TYPE；
+2. `NAME` 为自然语言名称，`LABEL` 为短状态标签，`COLOR` 为该 TYPE 的主状态色；
+3. 保存后，新 TYPE 会立即出现在模板编辑器与 TODAY 的 TYPE 下拉框中；
+4. 删除正在使用的自定义 TYPE 时，TEMPO-7 会提示引用数量，确认后相关任务迁移到 `CUSTOM / 其他`；
+5. 自定义 TYPE 与其定义会写入 localStorage，并纳入 FULL BACKUP。
+
+## TASK NOTE
+
+- 模板编辑器与 TODAY 中，每一行 TYPE 右侧的 `✎` 用于展开 / 收起 NOTE；
+- NOTE 为单行文本，最多 200 字符；
+- 空 NOTE 不显示；
+- CURRENT 显示在任务大标题下方，NEXT 与 SCHEDULE 使用较小字号显示；
+- 超出可用宽度时自动横向滚动，末端停顿后平滑回到起点，悬停暂停；
+- NOTE 跟随任务进入模板复制、TODAY Override、TODAY JSON、SAVE AS TEMPLATE 与 FULL BACKUP。
+
+## 铃声系统
+
+点击顶栏 `SOUND`：
+
+- 每个任务 TYPE 均有 `ENTRY` 与 `EXIT` 两个独立音频槽位；
+- 未配置的事件保持静音；
+- 支持 MP3 / WAV、试听与清除；
+- 所有音频本体保存在 IndexedDB，并由 FULL BACKUP 以 Base64 一并迁移；
+- 浏览器重开后仍需通过 `ENABLE SOUND / START TODAY` 完成一次音频解锁。
 
 ## 外观系统使用
 
@@ -104,7 +149,7 @@ v0.7.1 的 TODAY 工作流、v0.7.0 的完整备份与自托管 DINish 字体体
 点击顶栏 `DATA`：
 
 1. `EXPORT FULL BACKUP` 会读取 localStorage 与 IndexedDB；
-2. 所有模板、WEEK PLAN、TODAY Override、LOOK 外观、铃声设置与已导入 MP3 / WAV 会写入一个 `TEMPO-7-full-backup-YYYY-MM-DD.json`；
+2. 所有模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY Override、LOOK 外观、铃声设置与已导入 MP3 / WAV 会写入一个 `TEMPO-7-full-backup-YYYY-MM-DD.json`；
 3. 音频以 Base64 写入 JSON，因此备份文件通常比原始音频总大小约大三分之一；
 4. 在另一设备 / 浏览器中选择 `IMPORT BACKUP`，TEMPO-7 会同时恢复配置和铃声音频；
 5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后仍需点击一次 `ENABLE SOUND` / `START TODAY`。
@@ -135,7 +180,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.7.2"
+git commit -m "TEMPO-7 v0.7.3"
 git push
 ```
 
@@ -144,11 +189,13 @@ GitHub Pages 会随 `main` 分支更新。
 ## 数据与存储
 
 - 日程模板：`localStorage`
+- 自定义 TYPE：`localStorage`
+- TASK NOTE：随模板 / TODAY Override 中的任务对象保存在 `localStorage`
 - WEEK PLAN：`localStorage`
 - TODAY Override：`localStorage`
 - 外观与铃声设置：`localStorage`
 - MP3 / WAV 音频本体：`IndexedDB`
-- FULL BACKUP：把上述可迁移用户数据与 IndexedDB 音频共同封装到单个 JSON（schema v5）
+- FULL BACKUP：把上述可迁移用户数据与 IndexedDB 音频共同封装到单个 JSON（schema v6）
 - 不迁移：当前运行会话、浏览器音频授权状态、当天已触发铃声日志
 
 同一设备、同一浏览器、同一网站来源会继续读取这些本地数据。`localhost:8000` 与 GitHub Pages 属于不同来源，因此二者的浏览器本地数据互不自动共享；v0.7.0 FULL BACKUP 可以用于二者之间迁移。
@@ -166,15 +213,18 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 项目 CSS 中 DINish 排在字体栈首位；因此只要仓库字体资源加载成功，就不会再调用用户设备上的 Bahnschrift。中文因 DINish 无对应 CJK 字形而自然回退到项目内思源黑体。
 
 
-## v0.7.3 前瞻
+## 后续前瞻
 
-计划中的下一轮功能版本：
-
-- TODAY 支持 `ADD NEW TYPE`，最多新增 10 个自定义分类；
-- 铃声系统扩展为所有 TYPE 均可配置自定义铃声，包括用户自定义分类；
-- STATE TRANSITION 扩展为更复杂的状态过渡动画，具体视觉方案待定。
+后续小版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画；v0.8.0 仍计划作为 Account & Cloud Sync 主版本。
 
 ## 版本记录
+
+### v0.7.3 — Custom Types / Per-Type Bells / Task Notes
+- 最多新增 6 个用户自定义 TYPE，并提供 NAME / LABEL / COLOR 管理。
+- SOUND 重构为所有任务 TYPE 均支持独立 ENTRY / EXIT 铃声。
+- TASK 新增可选 NOTE：单行、最多 200 字符，模板与 TODAY 均可编辑。
+- NOTE 显示于 CURRENT / NEXT / SCHEDULE，溢出时自动横向滚动并支持悬停暂停。
+- FULL BACKUP 升级至 schema v6，加入自定义 TYPE 与动态铃声音频备份，同时保持旧版导入兼容。
 
 ### v0.7.2 — Performance Optimization
 - 拆分动态时钟刷新与静态状态刷新，减少长期运行中的重复 DOM 操作。

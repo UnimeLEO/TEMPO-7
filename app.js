@@ -1,13 +1,14 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.7.2';
+  const APP_VERSION = '0.7.3';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
     runState: 'tempo7.runState',
     soundTriggerLog: 'tempo7.soundTriggerLog',
-    dailyOverrides: 'tempo7.dailyOverrides'
+    dailyOverrides: 'tempo7.dailyOverrides',
+    customTypes: 'tempo7.customTypes'
   };
 
   const MEDIA_DB = {
@@ -20,6 +21,10 @@
     classStart: 'class-start',
     classEnd: 'class-end'
   };
+  const BUILT_IN_TYPE_IDS = ['class', 'break', 'meal', 'routine', 'rest', 'custom'];
+  const MAX_CUSTOM_TYPES = 6;
+  const NOTE_MAX_LENGTH = 200;
+  const CUSTOM_TYPE_DEFAULT_COLORS = ['#6F8FAF', '#7D9A72', '#B07C9E', '#9B8662', '#718F91', '#8A78A8'];
 
   const SOUND_CATCHUP_LIMIT_SECONDS = 90;
   const OFF_TEMPLATE_ID = '__off__';
@@ -139,42 +144,42 @@
 
   const $ = (id) => document.getElementById(id);
   const els = {
-    hero: $('hero'), currentTaskName: $('currentTaskName'), currentTaskRange: $('currentTaskRange'),
+    hero: $('hero'), currentTaskName: $('currentTaskName'), currentTaskNote: $('currentTaskNote'), currentTaskRange: $('currentTaskRange'),
     categoryBadge: $('categoryBadge'), countdown: $('countdown'), countdownLabel: $('countdownLabel'),
     progressFill: $('progressFill'), progressPercent: $('progressPercent'), progressLabel: $('progressLabel'),
-    nextTaskName: $('nextTaskName'), nextTaskRange: $('nextTaskRange'), nextTaskCategory: $('nextTaskCategory'),
+    nextTaskName: $('nextTaskName'), nextTaskNote: $('nextTaskNote'), nextTaskRange: $('nextTaskRange'), nextTaskCategory: $('nextTaskCategory'),
     nextStartsIn: $('nextStartsIn'), scheduleList: $('scheduleList'), dayProgress: $('dayProgress'), systemDate: $('systemDate'),
     activeTemplateSelect: $('activeTemplateSelect'), startTodayBtn: $('startTodayBtn'), installAppBtn: $('installAppBtn'), todayBtn: $('todayBtn'),
     weekPlanBtn: $('weekPlanBtn'), editScheduleBtn: $('editScheduleBtn'), dataBtn: $('dataBtn'), soundBtn: $('soundBtn'), appearanceBtn: $('appearanceBtn'),
     scheduleDialog: $('scheduleDialog'), todayDialog: $('todayDialog'), weekPlanDialog: $('weekPlanDialog'), dataDialog: $('dataDialog'), soundDialog: $('soundDialog'), appearanceDialog: $('appearanceDialog'),
     editorTemplateSelect: $('editorTemplateSelect'), templateNameInput: $('templateNameInput'), scheduleRows: $('scheduleRows'),
-    scheduleError: $('scheduleError'), addTaskBtn: $('addTaskBtn'), saveScheduleBtn: $('saveScheduleBtn'),
+    scheduleError: $('scheduleError'), addTaskBtn: $('addTaskBtn'), addNewTypeBtn: $('addNewTypeBtn'), saveScheduleBtn: $('saveScheduleBtn'),
     newTemplateBtn: $('newTemplateBtn'), duplicateTemplateBtn: $('duplicateTemplateBtn'), deleteTemplateBtn: $('deleteTemplateBtn'),
     exportJsonBtn: $('exportJsonBtn'), importJsonInput: $('importJsonInput'), dataMessage: $('dataMessage'),
     soundEnabledInput: $('soundEnabledInput'), soundVolumeInput: $('soundVolumeInput'), soundVolumeValue: $('soundVolumeValue'),
-    classStartSoundInput: $('classStartSoundInput'), classEndSoundInput: $('classEndSoundInput'),
-    classStartSoundName: $('classStartSoundName'), classEndSoundName: $('classEndSoundName'),
-    previewClassStartBtn: $('previewClassStartBtn'), previewClassEndBtn: $('previewClassEndBtn'),
-    clearClassStartBtn: $('clearClassStartBtn'), clearClassEndBtn: $('clearClassEndBtn'), soundMessage: $('soundMessage'),
+    soundBindings: $('soundBindings'), soundMessage: $('soundMessage'),
     appearanceTransitionInput: $('appearanceTransitionInput'), appearanceMessage: $('appearanceMessage'),
     resetAppearanceBtn: $('resetAppearanceBtn'), saveAppearanceBtn: $('saveAppearanceBtn'),
-    transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'),
+    transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'), customTypeRowTemplate: $('customTypeRowTemplate'),
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
     todayStatusLabel: $('todayStatusLabel'), todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
-    addTodayTaskBtn: $('addTodayTaskBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
+    addTodayTaskBtn: $('addTodayTaskBtn'), addTodayNewTypeBtn: $('addTodayNewTypeBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
     exportTodayBtn: $('exportTodayBtn'), openTodayTemplatePanelBtn: $('openTodayTemplatePanelBtn'),
     todayTemplatePanel: $('todayTemplatePanel'), closeTodayTemplatePanelBtn: $('closeTodayTemplatePanelBtn'),
     todayTemplateNameInput: $('todayTemplateNameInput'), saveTodayAsTemplateBtn: $('saveTodayAsTemplateBtn'),
     saveTodayApplyBtn: $('saveTodayApplyBtn'), saveTodayWeekBtn: $('saveTodayWeekBtn'), saveTodayWeekWrap: $('saveTodayWeekWrap'),
-    weekPlanEnabledInput: $('weekPlanEnabledInput'), weekPlanRows: $('weekPlanRows'), weekPlanMessage: $('weekPlanMessage'), saveWeekPlanBtn: $('saveWeekPlanBtn')
+    weekPlanEnabledInput: $('weekPlanEnabledInput'), weekPlanRows: $('weekPlanRows'), weekPlanMessage: $('weekPlanMessage'), saveWeekPlanBtn: $('saveWeekPlanBtn'),
+    typeDialog: $('typeDialog'), customTypeRows: $('customTypeRows'), customTypeCount: $('customTypeCount'), typeAddBtn: $('typeAddBtn'), saveTypesBtn: $('saveTypesBtn'), typeError: $('typeError')
   };
 
+  let customTypes = loadCustomTypes();
   let templates = loadTemplates();
   let settings = loadSettings();
   let dailyOverrides = loadDailyOverrides();
   let editorTemplateId = settings.activeTemplateId;
   let todayEditorContext = null;
   let appearanceDraft = null;
+  let customTypeDraft = null;
   let appearanceSavedThisOpen = false;
   let lastStateKey = null;
   let lastTemplateUiKey = null;
@@ -330,7 +335,7 @@
   }
 
   async function collectAudioBackup() {
-    const ids = [SOUND_ASSETS.classStart, SOUND_ASSETS.classEnd];
+    const ids = getAllSoundAssetIds();
     const records = await Promise.all(ids.map(serializeAudioAsset));
     return records.filter(Boolean);
   }
@@ -338,7 +343,7 @@
   async function restoreAudioBackup(rawAssets, { exact = true } = {}) {
     if (!Array.isArray(rawAssets)) return { restored: 0, legacy: true };
 
-    const allowedIds = new Set([SOUND_ASSETS.classStart, SOUND_ASSETS.classEnd]);
+    const allowedIds = new Set(getAllSoundAssetIds());
     const restoredIds = new Set();
     let restored = 0;
 
@@ -397,10 +402,7 @@
     if (context.state !== 'running') await context.resume();
     soundRuntime.unlocked = context.state === 'running';
     if (!soundRuntime.unlocked) throw new Error('浏览器没有允许音频播放。请再次点击 ENABLE SOUND。');
-    await Promise.allSettled([
-      loadAudioBuffer(SOUND_ASSETS.classStart),
-      loadAudioBuffer(SOUND_ASSETS.classEnd)
-    ]);
+    await Promise.allSettled(getAllSoundAssetIds().map(loadAudioBuffer));
     return true;
   }
 
@@ -438,6 +440,14 @@
     }
   }
 
+  function makeButton(text, className = 'btn') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = text;
+    return button;
+  }
+
   async function refreshSoundUi() {
     els.soundEnabledInput.checked = settings.sound.enabled;
     const volumePct = Math.round(settings.sound.volume * 100);
@@ -445,16 +455,81 @@
     els.soundVolumeValue.textContent = `${volumePct}%`;
 
     try {
-      const [startAsset, endAsset] = await Promise.all([
-        getAudioAsset(SOUND_ASSETS.classStart),
-        getAudioAsset(SOUND_ASSETS.classEnd)
-      ]);
-      els.classStartSoundName.textContent = startAsset ? `${startAsset.name} // ${formatFileSize(startAsset.size)}` : 'NOT CONFIGURED';
-      els.classEndSoundName.textContent = endAsset ? `${endAsset.name} // ${formatFileSize(endAsset.size)}` : 'NOT CONFIGURED';
-      els.previewClassStartBtn.disabled = !startAsset;
-      els.clearClassStartBtn.disabled = !startAsset;
-      els.previewClassEndBtn.disabled = !endAsset;
-      els.clearClassEndBtn.disabled = !endAsset;
+      settings.sound.bindings = buildSoundBindings();
+      const types = getTaskTypeDefinitions();
+      const assetIds = types.flatMap(type => [soundAssetId(type.id, 'start'), soundAssetId(type.id, 'end')]);
+      const assetRecords = await Promise.all(assetIds.map(async id => [id, await getAudioAsset(id)]));
+      const assets = new Map(assetRecords);
+      els.soundBindings.replaceChildren();
+
+      for (const type of types) {
+        const group = document.createElement('section');
+        group.className = 'sound-type-group';
+
+        const head = document.createElement('div');
+        head.className = 'sound-type-head';
+        const title = document.createElement('div');
+        title.className = 'sound-type-title';
+        const swatch = document.createElement('span');
+        swatch.className = 'sound-type-swatch';
+        swatch.style.setProperty('--type-color', getCategoryMeta(type.id).color);
+        const strong = document.createElement('strong');
+        strong.textContent = type.name;
+        title.append(swatch, strong);
+        const label = document.createElement('span');
+        label.textContent = type.label;
+        head.append(title, label);
+        group.appendChild(head);
+
+        for (const phase of ['start', 'end']) {
+          const assetId = soundAssetId(type.id, phase);
+          const asset = assets.get(assetId);
+          const row = document.createElement('div');
+          row.className = 'sound-event-row';
+
+          const eventName = document.createElement('div');
+          eventName.className = 'sound-event-name';
+          eventName.textContent = phase === 'start' ? 'ENTRY' : 'EXIT';
+
+          const fileName = document.createElement('div');
+          fileName.className = 'sound-file-name';
+          fileName.textContent = asset ? `${asset.name} // ${formatFileSize(asset.size)}` : 'NOT CONFIGURED';
+
+          const actions = document.createElement('div');
+          actions.className = 'sound-event-actions';
+
+          const fileLabel = document.createElement('label');
+          fileLabel.className = 'btn file-btn';
+          fileLabel.textContent = 'IMPORT';
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav';
+          input.addEventListener('change', () => importSound(assetId, input, `${type.label} ${phase === 'start' ? 'ENTRY' : 'EXIT'}`));
+          fileLabel.appendChild(input);
+
+          const preview = makeButton('PREVIEW');
+          preview.disabled = !asset;
+          preview.addEventListener('click', async () => {
+            try {
+              await unlockAudio();
+              await playSoundAsset(assetId, { ignoreEnabled: true });
+              renderRunButton();
+            } catch (err) {
+              showSoundMessage(err.message || '试听失败。', false);
+            }
+          });
+
+          const clear = makeButton('CLEAR', 'btn btn-danger-outline');
+          clear.disabled = !asset;
+          clear.addEventListener('click', () => clearSound(assetId, `${type.label} ${phase === 'start' ? 'ENTRY' : 'EXIT'}`));
+
+          actions.append(fileLabel, preview, clear);
+          row.append(eventName, fileName, actions);
+          group.appendChild(row);
+        }
+
+        els.soundBindings.appendChild(group);
+      }
     } catch (err) {
       showSoundMessage(err.message || '读取铃声设置失败。', false);
     }
@@ -529,9 +604,14 @@
   }
 
   function getCategoryMeta(category, appearance = appearanceDraft || settings.appearance) {
+    const userType = getCustomTypeById(category);
+    if (userType) {
+      const color = normalizeHex(userType.color, '#6F8FAF');
+      return { label: userType.label, name: userType.name, color, ink: contrastInk(color), builtIn: false };
+    }
     const base = CATEGORY_META[category] || CATEGORY_META.custom;
     const color = appearance?.states?.[category] || base.color;
-    return { ...base, color, ink: contrastInk(color) };
+    return { ...base, color, ink: contrastInk(color), builtIn: true };
   }
 
   function applyAppearance(appearance = settings.appearance) {
@@ -603,18 +683,98 @@
     els.appearanceMessage.hidden = false;
   }
 
-  function normalizeTask(task) {
+  function sanitizeSingleLine(value, maxLength) {
+    return String(value ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  }
+
+  function normalizeCustomType(raw, index = 0) {
+    const idText = String(raw?.id || '');
+    const id = idText && !BUILT_IN_TYPE_IDS.includes(idText) && !['free', 'ended'].includes(idText)
+      ? idText
+      : makeId('type');
+    const name = sanitizeSingleLine(raw?.name || `自定义 ${index + 1}`, 20) || `自定义 ${index + 1}`;
+    const label = sanitizeSingleLine(raw?.label || `TYPE ${index + 1}`, 16).toUpperCase() || `TYPE ${index + 1}`;
+    const color = normalizeHex(raw?.color, CUSTOM_TYPE_DEFAULT_COLORS[index % CUSTOM_TYPE_DEFAULT_COLORS.length]);
+    return { id, name, label, color };
+  }
+
+  function normalizeCustomTypes(rawTypes) {
+    if (!Array.isArray(rawTypes)) return [];
+    const result = [];
+    const usedIds = new Set(BUILT_IN_TYPE_IDS);
+    const usedLabels = new Set(BUILT_IN_TYPE_IDS.map(id => CATEGORY_META[id].label.toUpperCase()));
+    for (const raw of rawTypes.slice(0, MAX_CUSTOM_TYPES)) {
+      const item = normalizeCustomType(raw, result.length);
+      if (usedIds.has(item.id)) item.id = makeId('type');
+      if (usedLabels.has(item.label.toUpperCase())) item.label = `TYPE ${result.length + 1}`;
+      usedIds.add(item.id);
+      usedLabels.add(item.label.toUpperCase());
+      result.push(item);
+    }
+    return result;
+  }
+
+  function loadCustomTypes() {
+    try {
+      return normalizeCustomTypes(JSON.parse(localStorage.getItem(STORAGE_KEYS.customTypes)));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveCustomTypes() {
+    localStorage.setItem(STORAGE_KEYS.customTypes, JSON.stringify(customTypes));
+  }
+
+  function getTaskTypeDefinitions(types = customTypes) {
+    const builtIn = BUILT_IN_TYPE_IDS.map(id => ({ id, ...CATEGORY_META[id], builtIn: true }));
+    const user = types.map(type => ({ ...type, ink: contrastInk(type.color), builtIn: false }));
+    return [...builtIn, ...user];
+  }
+
+  function getCustomTypeById(typeId, types = customTypes) {
+    return types.find(type => type.id === typeId) || null;
+  }
+
+  function isTaskTypeId(typeId, types = customTypes) {
+    return BUILT_IN_TYPE_IDS.includes(typeId) || !!getCustomTypeById(typeId, types);
+  }
+
+  function soundAssetId(typeId, phase) {
+    if (typeId === 'class' && phase === 'start') return SOUND_ASSETS.classStart;
+    if (typeId === 'class' && phase === 'end') return SOUND_ASSETS.classEnd;
+    return `type-${typeId}-${phase}`;
+  }
+
+  function buildSoundBindings(types = customTypes) {
+    const bindings = {};
+    for (const type of getTaskTypeDefinitions(types)) {
+      bindings[type.id] = {
+        start: soundAssetId(type.id, 'start'),
+        end: soundAssetId(type.id, 'end')
+      };
+    }
+    return bindings;
+  }
+
+  function getAllSoundAssetIds(types = customTypes) {
+    return getTaskTypeDefinitions(types).flatMap(type => [soundAssetId(type.id, 'start'), soundAssetId(type.id, 'end')]);
+  }
+
+  function normalizeTask(task, types = customTypes) {
+    const requestedCategory = String(task?.category || 'custom');
     return {
       id: task?.id || makeId('task'),
       start: String(task?.start || ''),
       end: String(task?.end || ''),
-      name: String(task?.name || ''),
-      category: CATEGORY_META[task?.category] ? task.category : 'custom'
+      name: sanitizeSingleLine(task?.name || '', 80),
+      category: isTaskTypeId(requestedCategory, types) ? requestedCategory : 'custom',
+      note: sanitizeSingleLine(task?.note || '', NOTE_MAX_LENGTH)
     };
   }
 
-  function normalizeTasks(tasks) {
-    return Array.isArray(tasks) ? tasks.map(normalizeTask) : [];
+  function normalizeTasks(tasks, types = customTypes) {
+    return Array.isArray(tasks) ? tasks.map(task => normalizeTask(task, types)) : [];
   }
 
   function loadTemplates() {
@@ -708,7 +868,7 @@
   function tasksEquivalent(a, b) {
     const simplify = tasks => [...tasks]
       .sort((x, y) => timeToSeconds(x.start) - timeToSeconds(y.start))
-      .map(task => ({ start: task.start, end: task.end, name: task.name, category: task.category }));
+      .map(task => ({ start: task.start, end: task.end, name: task.name, category: task.category, note: task.note || '' }));
     return JSON.stringify(simplify(a)) === JSON.stringify(simplify(b));
   }
 
@@ -740,12 +900,7 @@
       sound: {
         enabled: parsed.sound?.enabled !== false,
         volume: Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.8,
-        bindings: {
-          class: {
-            start: SOUND_ASSETS.classStart,
-            end: SOUND_ASSETS.classEnd
-          }
-        }
+        bindings: buildSoundBindings()
       }
     };
   }
@@ -753,6 +908,7 @@
   function saveAll() {
     localStorage.setItem(STORAGE_KEYS.templates, JSON.stringify(templates));
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+    saveCustomTypes();
   }
 
   function getManualActiveTemplate() {
@@ -979,6 +1135,43 @@
     if (element.textContent !== value) element.textContent = value;
   }
 
+  function refreshNoteMarquee(container) {
+    if (!container || container.hidden) return;
+    const text = container.querySelector('.note-marquee-text');
+    if (!text) return;
+    container.classList.remove('is-overflowing');
+    container.style.removeProperty('--note-shift');
+    container.style.removeProperty('--note-duration');
+    requestAnimationFrame(() => {
+      if (container.hidden || !text.isConnected) return;
+      const overflow = Math.max(0, text.scrollWidth - container.clientWidth);
+      if (overflow > 2) {
+        container.style.setProperty('--note-shift', `${Math.ceil(overflow)}px`);
+        container.style.setProperty('--note-duration', `${Math.max(12, 8 + overflow / 18).toFixed(1)}s`);
+        container.classList.add('is-overflowing');
+      }
+    });
+  }
+
+  function setTaskNote(container, value) {
+    if (!container) return;
+    const note = sanitizeSingleLine(value, NOTE_MAX_LENGTH);
+    const text = container.querySelector('.note-marquee-text');
+    if (!note) {
+      container.hidden = true;
+      container.classList.remove('is-overflowing');
+      if (text) text.textContent = '';
+      return;
+    }
+    container.hidden = false;
+    if (text && text.textContent !== note) text.textContent = note;
+    refreshNoteMarquee(container);
+  }
+
+  function refreshAllNoteMarquees() {
+    document.querySelectorAll('.note-marquee:not([hidden])').forEach(refreshNoteMarquee);
+  }
+
   function getRuntimeStateDescriptor(state, now) {
     const taskKey = state.mode === 'task'
       ? (state.task.id || `${state.task.start}:${state.task.end}:${state.task.name}:${state.task.category}`)
@@ -1018,6 +1211,7 @@
 
     const meta = applyCategory(category);
     setTextIfChanged(els.currentTaskName, displayName);
+    setTaskNote(els.currentTaskNote, state.mode === 'task' ? state.task.note : '');
     setTextIfChanged(els.currentTaskRange, range);
     setTextIfChanged(els.categoryBadge, meta.label);
     setTextIfChanged(els.countdownLabel, countdownLabel);
@@ -1085,6 +1279,7 @@
     const next = state.nextTask;
     if (!next) {
       setTextIfChanged(els.nextTaskName, '无下一任务');
+      setTaskNote(els.nextTaskNote, '');
       setTextIfChanged(els.nextTaskRange, '--:-- — --:--');
       setTextIfChanged(els.nextTaskCategory, 'END OF SCHEDULE');
       setTextIfChanged(els.nextStartsIn, '--');
@@ -1092,6 +1287,7 @@
     }
     const meta = getCategoryMeta(next.category);
     setTextIfChanged(els.nextTaskName, next.name);
+    setTaskNote(els.nextTaskNote, next.note);
     setTextIfChanged(els.nextTaskRange, `${next.start} — ${next.end}`);
     setTextIfChanged(els.nextTaskCategory, `${meta.label} / ${meta.name}`);
   }
@@ -1115,7 +1311,7 @@
 
     // Preserve the scroll position by rebuilding only when the actual upcoming
     // schedule changes (task transition, template edit/switch, etc.).
-    const renderKey = upcoming.map(task => `${task.start}|${task.end}|${task.name}|${task.category}`).join('\n');
+    const renderKey = upcoming.map(task => `${task.start}|${task.end}|${task.name}|${task.category}|${task.note || ''}`).join('\n');
     if (scheduleCruise.renderKey === renderKey) return;
     scheduleCruise.renderKey = renderKey;
 
@@ -1136,19 +1332,32 @@
       const time = document.createElement('div');
       time.className = 'schedule-time';
       time.textContent = `${task.start}—${task.end}`;
+      const main = document.createElement('div');
+      main.className = 'schedule-main';
       const name = document.createElement('div');
       name.className = 'schedule-name';
       name.textContent = task.name;
+      main.appendChild(name);
+      if (task.note) {
+        const note = document.createElement('div');
+        note.className = 'schedule-note note-marquee';
+        const noteText = document.createElement('span');
+        noteText.className = 'note-marquee-text';
+        noteText.textContent = task.note;
+        note.appendChild(noteText);
+        main.appendChild(note);
+      }
       const type = document.createElement('div');
       type.className = 'schedule-type';
       type.textContent = meta.label;
-      item.append(time, name, type);
+      item.append(time, main, type);
       els.scheduleList.appendChild(item);
     }
 
     // A state transition means the closest future block has changed. Bring the
     // schedule back to the top so the list always reacquires the present.
     resetScheduleCruise(true);
+    requestAnimationFrame(refreshAllNoteMarquees);
   }
 
   function renderTodayIndicator(now = getNow()) {
@@ -1397,6 +1606,177 @@
     els.weekPlanDialog.close();
   }
 
+  function populateTypeSelect(select, selected = 'custom') {
+    const current = selected || 'custom';
+    select.replaceChildren();
+    for (const type of getTaskTypeDefinitions()) {
+      const option = document.createElement('option');
+      option.value = type.id;
+      option.textContent = `${type.name} ${type.label}`;
+      select.appendChild(option);
+    }
+    select.value = isTaskTypeId(current) ? current : 'custom';
+  }
+
+  function refreshOpenTypeSelects() {
+    document.querySelectorAll('.row-category').forEach(select => {
+      const selected = select.value;
+      populateTypeSelect(select, selected);
+    });
+  }
+
+  function bindNoteEditorRow(node, initialNote = '') {
+    const toggle = node.querySelector('.row-note-toggle');
+    const panel = node.querySelector('.row-note-panel');
+    const input = node.querySelector('.row-note');
+    const counter = node.querySelector('.note-counter');
+    const update = () => {
+      input.value = sanitizeSingleLine(input.value, NOTE_MAX_LENGTH);
+      counter.textContent = `${input.value.length} / ${NOTE_MAX_LENGTH}`;
+      toggle.classList.toggle('has-note', !!input.value);
+      toggle.title = input.value ? '编辑 NOTE' : '添加 NOTE';
+    };
+    input.value = sanitizeSingleLine(initialNote, NOTE_MAX_LENGTH);
+    update();
+    input.addEventListener('input', update);
+    toggle.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) requestAnimationFrame(() => input.focus());
+    });
+  }
+
+  function showTypeError(message) {
+    els.typeError.textContent = message;
+    els.typeError.hidden = false;
+  }
+
+  function hideTypeError() {
+    els.typeError.textContent = '';
+    els.typeError.hidden = true;
+  }
+
+  function renderTypeManager() {
+    customTypeDraft = deepClone(customTypes);
+    els.customTypeRows.replaceChildren();
+    for (const type of customTypeDraft) addCustomTypeDraftRow(type);
+    refreshTypeManagerCount();
+    hideTypeError();
+  }
+
+  function addCustomTypeDraftRow(type = null) {
+    if (els.customTypeRows.querySelectorAll('.custom-type-row').length >= MAX_CUSTOM_TYPES) return;
+    const index = els.customTypeRows.querySelectorAll('.custom-type-row').length;
+    const value = type || {
+      id: makeId('type'),
+      name: '',
+      label: `TYPE ${index + 1}`,
+      color: CUSTOM_TYPE_DEFAULT_COLORS[index % CUSTOM_TYPE_DEFAULT_COLORS.length]
+    };
+    const node = els.customTypeRowTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.typeId = value.id;
+    node.querySelector('.type-name-input').value = value.name || '';
+    node.querySelector('.type-label-input').value = value.label || '';
+    node.querySelector('.type-color-input').value = normalizeHex(value.color, CUSTOM_TYPE_DEFAULT_COLORS[index % CUSTOM_TYPE_DEFAULT_COLORS.length]).toLowerCase();
+    node.querySelector('.type-delete').addEventListener('click', () => {
+      node.remove();
+      refreshTypeManagerCount();
+    });
+    els.customTypeRows.appendChild(node);
+    refreshTypeManagerCount();
+  }
+
+  function refreshTypeManagerCount() {
+    const count = els.customTypeRows.querySelectorAll('.custom-type-row').length;
+    els.customTypeCount.textContent = `${count} / ${MAX_CUSTOM_TYPES}`;
+    els.typeAddBtn.disabled = count >= MAX_CUSTOM_TYPES;
+  }
+
+  function collectCustomTypeDraft() {
+    const rows = [...els.customTypeRows.querySelectorAll('.custom-type-row')];
+    if (rows.length > MAX_CUSTOM_TYPES) throw new Error(`最多只能创建 ${MAX_CUSTOM_TYPES} 个自定义 TYPE。`);
+    const result = [];
+    const labels = new Set(BUILT_IN_TYPE_IDS.map(id => CATEGORY_META[id].label.toUpperCase()));
+    for (const [index, row] of rows.entries()) {
+      const name = sanitizeSingleLine(row.querySelector('.type-name-input').value, 20);
+      const label = sanitizeSingleLine(row.querySelector('.type-label-input').value, 16).toUpperCase();
+      const color = normalizeHex(row.querySelector('.type-color-input').value, CUSTOM_TYPE_DEFAULT_COLORS[index % CUSTOM_TYPE_DEFAULT_COLORS.length]);
+      if (!name) throw new Error(`第 ${index + 1} 个自定义 TYPE 没有填写 NAME。`);
+      if (!label) throw new Error(`第 ${index + 1} 个自定义 TYPE 没有填写 LABEL。`);
+      if (labels.has(label)) throw new Error(`TYPE LABEL “${label}”重复，请使用唯一 LABEL。`);
+      labels.add(label);
+      result.push({ id: row.dataset.typeId || makeId('type'), name, label, color });
+    }
+    return result;
+  }
+
+  function countTypeReferences(typeIds) {
+    const ids = new Set(typeIds);
+    let count = 0;
+    for (const template of templates) count += template.tasks.filter(task => ids.has(task.category)).length;
+    for (const byTemplate of Object.values(dailyOverrides)) {
+      for (const entry of Object.values(byTemplate || {})) count += (entry.tasks || []).filter(task => ids.has(task.category)).length;
+    }
+    return count;
+  }
+
+  function migrateRemovedTypes(typeIds) {
+    const ids = new Set(typeIds);
+    const migrate = tasks => {
+      for (const task of tasks) if (ids.has(task.category)) task.category = 'custom';
+    };
+    for (const template of templates) migrate(template.tasks);
+    for (const byTemplate of Object.values(dailyOverrides)) {
+      for (const entry of Object.values(byTemplate || {})) {
+        migrate(entry.tasks || []);
+        entry.updatedAt = new Date().toISOString();
+      }
+    }
+  }
+
+  async function saveTypeManager() {
+    let nextTypes;
+    try {
+      nextTypes = collectCustomTypeDraft();
+    } catch (err) {
+      showTypeError(err.message || '自定义 TYPE 无效。');
+      return;
+    }
+
+    const nextIds = new Set(nextTypes.map(type => type.id));
+    const removed = customTypes.filter(type => !nextIds.has(type.id));
+    const removedIds = removed.map(type => type.id);
+    const references = countTypeReferences(removedIds);
+    if (removedIds.length && references > 0) {
+      const ok = confirm(`有 ${references} 个任务仍在使用即将删除的 TYPE。继续后这些任务会迁移到 CUSTOM / 其他。`);
+      if (!ok) return;
+    }
+
+    if (removedIds.length) migrateRemovedTypes(removedIds);
+    customTypes = normalizeCustomTypes(nextTypes);
+    settings.sound.bindings = buildSoundBindings();
+    saveAll();
+    saveDailyOverrides();
+
+    await Promise.allSettled(removedIds.flatMap(typeId => [
+      deleteAudioAsset(soundAssetId(typeId, 'start')),
+      deleteAudioAsset(soundAssetId(typeId, 'end'))
+    ]));
+
+    refreshOpenTypeSelects();
+    lastRuntimeRenderKey = null;
+    lastStateKey = null;
+    scheduleCruise.renderKey = null;
+    resetSoundEventCursor();
+    render();
+    if (els.soundDialog.open) await refreshSoundUi();
+    els.typeDialog.close();
+  }
+
+  function openTypeManager() {
+    renderTypeManager();
+    els.typeDialog.showModal();
+  }
+
   function renderEditor() {
     const template = templates.find(t => t.id === editorTemplateId) || templates[0];
     editorTemplateId = template.id;
@@ -1407,13 +1787,14 @@
     hideScheduleError();
   }
 
-  function addEditorRow(task = { start: '', end: '', name: '', category: 'custom' }) {
+  function addEditorRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }) {
     const node = els.scheduleRowTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.taskId = task.id || makeId('task');
     node.querySelector('.row-start').value = task.start || '';
     node.querySelector('.row-end').value = task.end || '';
     node.querySelector('.row-name').value = task.name || '';
-    node.querySelector('.row-category').value = task.category || 'custom';
+    populateTypeSelect(node.querySelector('.row-category'), task.category || 'custom');
+    bindNoteEditorRow(node, task.note || '');
     node.querySelector('.row-delete').addEventListener('click', () => node.remove());
     els.scheduleRows.appendChild(node);
   }
@@ -1424,7 +1805,8 @@
       start: row.querySelector('.row-start').value,
       end: row.querySelector('.row-end').value,
       name: row.querySelector('.row-name').value.trim(),
-      category: row.querySelector('.row-category').value
+      category: row.querySelector('.row-category').value,
+      note: sanitizeSingleLine(row.querySelector('.row-note').value, NOTE_MAX_LENGTH)
     }));
   }
 
@@ -1534,13 +1916,14 @@
     refreshTodayTemplateWeekAction();
   }
 
-  function addTodayRow(task = { start: '', end: '', name: '', category: 'custom' }) {
+  function addTodayRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }) {
     const node = els.todayRowTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.taskId = task.id || makeId('task');
     node.querySelector('.row-start').value = task.start || '';
     node.querySelector('.row-end').value = task.end || '';
     node.querySelector('.row-name').value = task.name || '';
-    node.querySelector('.row-category').value = task.category || 'custom';
+    populateTypeSelect(node.querySelector('.row-category'), task.category || 'custom');
+    bindNoteEditorRow(node, task.note || '');
     node.querySelector('.today-skip').addEventListener('click', () => {
       node.remove();
       renderTodayEmptyState();
@@ -1565,7 +1948,8 @@
       start: row.querySelector('.row-start').value,
       end: row.querySelector('.row-end').value,
       name: row.querySelector('.row-name').value.trim(),
-      category: row.querySelector('.row-category').value
+      category: row.querySelector('.row-category').value,
+      note: sanitizeSingleLine(row.querySelector('.row-note').value, NOTE_MAX_LENGTH)
     }));
   }
 
@@ -1825,10 +2209,11 @@
       const payload = {
         app: 'TEMPO-7',
         appVersion: APP_VERSION,
-        schemaVersion: 5,
+        schemaVersion: 6,
         backupType: 'full',
         exportedAt: new Date().toISOString(),
         templates,
+        customTypes,
         settings,
         dailyOverrides,
         media: {
@@ -1850,7 +2235,7 @@
       const audioSummary = audioAssets.length
         ? `${audioAssets.length} 个铃声音频（原始音频约 ${formatFileSize(audioBytes)}）`
         : '未配置铃声音频';
-      showDataMessage(`完整备份已导出：模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置和 ${audioSummary}。`, true);
+      showDataMessage(`完整备份已导出：模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置和 ${audioSummary}。`, true);
     } catch (err) {
       showDataMessage(err.message || '完整备份导出失败。', false);
     } finally {
@@ -1859,7 +2244,7 @@
     }
   }
 
-  function normalizeImportedOverrides(rawOverrides, importedTemplates) {
+  function normalizeImportedOverrides(rawOverrides, importedTemplates, importedCustomTypes = []) {
     const result = {};
     if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) return result;
     const templateIds = new Set([OFF_TEMPLATE_ID, ...importedTemplates.map(template => template.id)]);
@@ -1868,7 +2253,7 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !byTemplate || typeof byTemplate !== 'object' || Array.isArray(byTemplate)) continue;
       for (const [templateId, entry] of Object.entries(byTemplate)) {
         if (!templateIds.has(templateId) || !entry || !Array.isArray(entry.tasks)) continue;
-        const tasks = normalizeTasks(entry.tasks);
+        const tasks = normalizeTasks(entry.tasks, importedCustomTypes);
         const error = validateTasks(tasks, { allowEmpty: true });
         if (error) throw new Error(`TODAY OVERRIDE ${date} 无效：${error}`);
         if (!result[date]) result[date] = {};
@@ -1887,10 +2272,11 @@
       const payload = JSON.parse(await file.text());
       if (payload.app !== 'TEMPO-7' || !Array.isArray(payload.templates) || !payload.templates.length) throw new Error('这不是有效的 TEMPO-7 备份文件。');
 
+      const importedCustomTypes = normalizeCustomTypes(payload.customTypes || payload.settings?.customTypes || []);
       const importedTemplates = payload.templates.map(template => ({
         id: template.id || makeId('template'),
         name: template.name || '未命名模板',
-        tasks: normalizeTasks(template.tasks)
+        tasks: normalizeTasks(template.tasks, importedCustomTypes)
       }));
 
       for (const template of importedTemplates) {
@@ -1898,8 +2284,9 @@
         if (error) throw new Error(`模板“${template.name}”无效：${error}`);
       }
 
+      customTypes = importedCustomTypes;
       templates = importedTemplates;
-      dailyOverrides = normalizeImportedOverrides(payload.dailyOverrides, importedTemplates);
+      dailyOverrides = normalizeImportedOverrides(payload.dailyOverrides, importedTemplates, importedCustomTypes);
 
       const requestedId = payload.settings?.activeTemplateId;
       const importedVolume = Number(payload.settings?.sound?.volume);
@@ -1911,7 +2298,7 @@
         sound: {
           enabled: payload.settings?.sound?.enabled !== false,
           volume: Number.isFinite(importedVolume) ? Math.min(1, Math.max(0, importedVolume)) : 0.8,
-          bindings: { class: { start: SOUND_ASSETS.classStart, end: SOUND_ASSETS.classEnd } }
+          bindings: buildSoundBindings(importedCustomTypes)
         }
       };
 
@@ -1934,7 +2321,7 @@
       const mediaMessage = mediaResult.legacy
         ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
         : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
-      showDataMessage(`恢复完成：${templates.length} 个模板、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE SOUND / START TODAY。`, true);
+      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE SOUND / START TODAY。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -2039,11 +2426,13 @@
 
     els.editorTemplateSelect.addEventListener('change', () => { editorTemplateId = els.editorTemplateSelect.value; renderEditor(); });
     els.addTaskBtn.addEventListener('click', () => addEditorRow());
+    els.addNewTypeBtn.addEventListener('click', openTypeManager);
     els.saveScheduleBtn.addEventListener('click', saveEditorTemplate);
     els.newTemplateBtn.addEventListener('click', newTemplate);
     els.duplicateTemplateBtn.addEventListener('click', duplicateTemplate);
     els.deleteTemplateBtn.addEventListener('click', deleteTemplate);
 
+    els.addTodayNewTypeBtn.addEventListener('click', openTypeManager);
     els.addTodayTaskBtn.addEventListener('click', () => {
       addTodayRow();
       hideTodayError();
@@ -2057,6 +2446,9 @@
     els.saveTodayAsTemplateBtn.addEventListener('click', () => saveTodayAsTemplate('save'));
     els.saveTodayApplyBtn.addEventListener('click', () => saveTodayAsTemplate('today'));
     els.saveTodayWeekBtn.addEventListener('click', () => saveTodayAsTemplate('week'));
+
+    els.typeAddBtn.addEventListener('click', () => addCustomTypeDraftRow());
+    els.saveTypesBtn.addEventListener('click', saveTypeManager);
 
     els.exportJsonBtn.addEventListener('click', exportJson);
     els.importJsonInput.addEventListener('change', () => {
@@ -2093,19 +2485,6 @@
       els.soundVolumeValue.textContent = `${Math.round(settings.sound.volume * 100)}%`;
       saveAll();
     });
-    els.classStartSoundInput.addEventListener('change', () => importSound(SOUND_ASSETS.classStart, els.classStartSoundInput, '上课铃'));
-    els.classEndSoundInput.addEventListener('change', () => importSound(SOUND_ASSETS.classEnd, els.classEndSoundInput, '下课铃'));
-    els.previewClassStartBtn.addEventListener('click', async () => {
-      try { await unlockAudio(); await playSoundAsset(SOUND_ASSETS.classStart, { ignoreEnabled: true }); renderRunButton(); }
-      catch (err) { showSoundMessage(err.message || '试听失败。', false); }
-    });
-    els.previewClassEndBtn.addEventListener('click', async () => {
-      try { await unlockAudio(); await playSoundAsset(SOUND_ASSETS.classEnd, { ignoreEnabled: true }); renderRunButton(); }
-      catch (err) { showSoundMessage(err.message || '试听失败。', false); }
-    });
-    els.clearClassStartBtn.addEventListener('click', () => clearSound(SOUND_ASSETS.classStart, '上课铃'));
-    els.clearClassEndBtn.addEventListener('click', () => clearSound(SOUND_ASSETS.classEnd, '下课铃'));
-
     // SCHEDULE: slow automatic cruise; hover pauses; manual interaction pauses
     // temporarily, then cruise resumes from wherever the user left it.
     els.scheduleList.addEventListener('mouseenter', () => {
@@ -2169,6 +2548,7 @@
       scheduleCruise.position = els.scheduleList.scrollTop;
       scheduleCruise.lastFrameMs = null;
       requestScheduleCruise();
+      refreshAllNoteMarquees();
     }, { passive: true });
 
     if ('ResizeObserver' in window) {

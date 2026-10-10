@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.7.2" />
+  <link rel="stylesheet" href="style.css?v=0.7.3" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -21,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.2</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.3</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -49,6 +49,7 @@
             <span id="todayModeBadge" class="today-mode-badge" hidden>TODAY // MODIFIED</span>
           </div>
           <h1 id="currentTaskName">载入中…</h1>
+          <div id="currentTaskNote" class="task-note task-note-current note-marquee" hidden><span class="note-marquee-text"></span></div>
         </div>
         <div class="hero-meta">
           <div id="categoryBadge" class="category-badge">FREE</div>
@@ -79,6 +80,7 @@
           <span id="nextStartsIn" class="panel-kicker">--</span>
         </div>
         <div id="nextTaskName" class="next-task-name">--</div>
+        <div id="nextTaskNote" class="task-note task-note-next note-marquee" hidden><span class="note-marquee-text"></span></div>
         <div id="nextTaskRange" class="next-task-range">--:-- — --:--</div>
         <div id="nextTaskCategory" class="next-task-category">--</div>
       </article>
@@ -120,17 +122,20 @@
         <input id="templateNameInput" type="text" maxlength="60" />
       </label>
 
-      <div class="editor-hint">只使用时间段。允许空档，但不允许任务互相重叠。时间按当天计算，不跨午夜。</div>
+      <div class="editor-hint">只使用时间段。允许空档，但不允许任务互相重叠。点击 TYPE 与删除键之间的 ✎ 可添加单行 NOTE（最多 200 字符）。</div>
 
       <div class="schedule-editor-head">
-        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span></span>
+        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span></span>
       </div>
       <div id="scheduleRows" class="schedule-editor"></div>
 
       <div id="scheduleError" class="error-box" hidden></div>
 
       <div class="modal-actions split-actions">
-        <button type="button" id="addTaskBtn" class="btn">+ ADD BLOCK</button>
+        <div class="left-actions">
+          <button type="button" id="addTaskBtn" class="btn">+ ADD BLOCK</button>
+          <button type="button" id="addNewTypeBtn" class="btn">+ ADD NEW TYPE</button>
+        </div>
         <div class="right-actions">
           <button class="btn" value="cancel">CANCEL</button>
           <button type="button" id="saveScheduleBtn" class="btn btn-primary">SAVE</button>
@@ -155,10 +160,10 @@
         <div class="today-meta-cell"><span>STATE</span><strong id="todayStatusLabel">TEMPLATE</strong></div>
       </div>
 
-      <div class="editor-hint">这里只修改今天。EDIT 模板不会被改动；SKIP 会从今天移除该时间段；允许空档，但时间段不能互相重叠。</div>
+      <div class="editor-hint">这里只修改今天。SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
 
       <div class="today-editor-head">
-        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>ACTION</span>
+        <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span>ACTION</span>
       </div>
       <div id="todayRows" class="schedule-editor today-editor"></div>
 
@@ -189,6 +194,7 @@
       <div class="modal-actions split-actions">
         <div class="left-actions">
           <button type="button" id="addTodayTaskBtn" class="btn">+ ADD TASK</button>
+          <button type="button" id="addTodayNewTypeBtn" class="btn">+ ADD NEW TYPE</button>
           <button type="button" id="resetTodayBtn" class="btn btn-danger-outline">RESET TODAY</button>
           <button type="button" id="exportTodayBtn" class="btn">EXPORT TODAY JSON</button>
           <button type="button" id="openTodayTemplatePanelBtn" class="btn">SAVE AS TEMPLATE</button>
@@ -238,7 +244,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.2 的 FULL BACKUP 会把模板、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.3 的 FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
       <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE SOUND / START TODAY 以重新激活声音。</p>
 
       <div class="data-actions">
@@ -250,7 +256,33 @@
   </dialog>
 
 
-  <dialog id="soundDialog" class="modal">
+  <dialog id="typeDialog" class="modal modal-wide">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-titlebar">
+        <div>
+          <div class="eyebrow">TYPE CONTROL</div>
+          <h2>自定义任务分类</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
+      </div>
+
+      <p class="modal-copy">内置 TYPE 保持不变；你最多可以额外创建 6 个自定义 TYPE。NAME 用于中文/自然语言显示，LABEL 用于工业风状态标签。删除仍在使用的 TYPE 时，对应任务会迁移到 CUSTOM / 其他。</p>
+      <div class="type-manager-head"><span>NAME</span><span>LABEL</span><span>COLOR</span><span></span></div>
+      <div id="customTypeRows" class="type-manager-rows"></div>
+      <div class="type-manager-toolbar">
+        <span id="customTypeCount" class="panel-kicker">0 / 6</span>
+        <button type="button" id="typeAddBtn" class="btn">+ ADD TYPE</button>
+      </div>
+      <div id="typeError" class="error-box" hidden></div>
+      <div class="modal-actions">
+        <button class="btn" value="cancel">CANCEL</button>
+        <button type="button" id="saveTypesBtn" class="btn btn-primary">SAVE TYPES</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="soundDialog" class="modal modal-wide">
     <form method="dialog" class="modal-frame">
       <div class="modal-titlebar">
         <div>
@@ -260,7 +292,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">当前版本把铃声绑定到 CLASS 分类：进入课程时播放上课铃，离开课程时播放下课铃。支持 MP3 / WAV。页面重新打开后，需要点击一次 ENABLE SOUND 重新激活浏览器音频权限。</p>
+      <p class="modal-copy">每个任务 TYPE 都可以分别配置 ENTRY（进入该 TYPE）与 EXIT（离开该 TYPE）铃声，支持 MP3 / WAV。没有配置的事件保持静音。页面重新打开后，需要点击一次 ENABLE SOUND 重新激活浏览器音频权限。</p>
 
       <div class="sound-master-row">
         <label class="switch-field">
@@ -274,43 +306,11 @@
         </label>
       </div>
 
-      <div class="sound-bindings">
-        <section class="sound-slot">
-          <div class="sound-slot-title">
-            <div>
-              <span class="eyebrow">CLASS // ENTRY</span>
-              <h3>上课铃</h3>
-            </div>
-            <span class="sound-event-tag">START</span>
-          </div>
-          <div id="classStartSoundName" class="sound-file-name">NOT CONFIGURED</div>
-          <div class="sound-slot-actions">
-            <label class="btn file-btn">IMPORT AUDIO<input id="classStartSoundInput" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" /></label>
-            <button type="button" id="previewClassStartBtn" class="btn">PREVIEW</button>
-            <button type="button" id="clearClassStartBtn" class="btn btn-danger-outline">CLEAR</button>
-          </div>
-        </section>
-
-        <section class="sound-slot">
-          <div class="sound-slot-title">
-            <div>
-              <span class="eyebrow">CLASS // EXIT</span>
-              <h3>下课铃</h3>
-            </div>
-            <span class="sound-event-tag">END</span>
-          </div>
-          <div id="classEndSoundName" class="sound-file-name">NOT CONFIGURED</div>
-          <div class="sound-slot-actions">
-            <label class="btn file-btn">IMPORT AUDIO<input id="classEndSoundInput" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" /></label>
-            <button type="button" id="previewClassEndBtn" class="btn">PREVIEW</button>
-            <button type="button" id="clearClassEndBtn" class="btn btn-danger-outline">CLEAR</button>
-          </div>
-        </section>
-      </div>
-
+      <div id="soundBindings" class="sound-bindings"></div>
       <div id="soundMessage" class="message-box" hidden></div>
     </form>
   </dialog>
+
 
   <dialog id="appearanceDialog" class="modal modal-wide">
     <form method="dialog" class="modal-frame">
@@ -381,39 +381,46 @@
   </dialog>
 
   <template id="scheduleRowTemplate">
-    <div class="schedule-row">
+    <div class="schedule-row task-editor-row">
       <input class="row-start" type="time" required />
       <input class="row-end" type="time" required />
       <input class="row-name" type="text" maxlength="80" placeholder="任务名称" required />
-      <select class="row-category">
-        <option value="class">课程 CLASS</option>
-        <option value="break">课间 BREAK</option>
-        <option value="meal">用餐 MEAL</option>
-        <option value="routine">日常 ROUTINE</option>
-        <option value="rest">休息 REST</option>
-        <option value="custom">其他 CUSTOM</option>
-      </select>
+      <select class="row-category"></select>
+      <button type="button" class="row-note-toggle icon-btn note-pen" aria-label="编辑备注" title="NOTE">✎</button>
       <button type="button" class="row-delete icon-btn" aria-label="删除">×</button>
+      <div class="row-note-panel" hidden>
+        <span>NOTE</span>
+        <input class="row-note" type="text" maxlength="200" placeholder="可选备注，最多 200 字符" />
+        <span class="note-counter">0 / 200</span>
+      </div>
     </div>
   </template>
 
   <template id="todayRowTemplate">
-    <div class="today-row">
+    <div class="today-row task-editor-row">
       <input class="row-start" type="time" required />
       <input class="row-end" type="time" required />
       <input class="row-name" type="text" maxlength="80" placeholder="任务名称" required />
-      <select class="row-category">
-        <option value="class">课程 CLASS</option>
-        <option value="break">课间 BREAK</option>
-        <option value="meal">用餐 MEAL</option>
-        <option value="routine">日常 ROUTINE</option>
-        <option value="rest">休息 REST</option>
-        <option value="custom">其他 CUSTOM</option>
-      </select>
+      <select class="row-category"></select>
+      <button type="button" class="row-note-toggle icon-btn note-pen" aria-label="编辑备注" title="NOTE">✎</button>
       <button type="button" class="today-skip btn btn-danger-outline">SKIP</button>
+      <div class="row-note-panel" hidden>
+        <span>NOTE</span>
+        <input class="row-note" type="text" maxlength="200" placeholder="可选备注，最多 200 字符" />
+        <span class="note-counter">0 / 200</span>
+      </div>
     </div>
   </template>
 
-  <script src="app.js?v=0.7.2"></script>
+  <template id="customTypeRowTemplate">
+    <div class="custom-type-row">
+      <input class="type-name-input" type="text" maxlength="20" placeholder="例如：研究" />
+      <input class="type-label-input" type="text" maxlength="16" placeholder="例如：RESEARCH" />
+      <input class="type-color-input" type="color" value="#6F8FAF" aria-label="TYPE color" />
+      <button type="button" class="type-delete icon-btn" aria-label="删除自定义 TYPE">×</button>
+    </div>
+  </template>
+
+  <script src="app.js?v=0.7.3"></script>
 </body>
 </html>
