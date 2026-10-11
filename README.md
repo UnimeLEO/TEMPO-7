@@ -1,9 +1,21 @@
-# TEMPO-7 v0.8.1 — SHARED BRAND TRANSITION
+# TEMPO-7 v0.8.1a — MICROLINE STABILITY HOTFIX
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
 
 v0.8.1 继续沿用 v0.8.0 的 START GATE 与 AUDIO 交互，但重做了开屏到主界面的品牌过渡：开屏中的 TEMPO-7 / ROUTINE CONTROL / 版本 / 时间不再作为独立元素飞出后被另一份顶栏信息替换，而是由同一个信息块在开场过程中同步缩小、位移并归位到正式顶栏。其余 v0.8.0 功能与既有数据结构保持不变。
 
+
+
+v0.8.1a 是 v0.8.1 的显示稳定性热修复：固定顶栏品牌信息小字的单行布局，并为数字启用等宽数字特性，避免实时时钟更新时因字符宽度变化触发 ROUTINE CONTROL / 版本 / 日期时间在换行与不换行之间反复跳动。其余 v0.8.1 行为与数据结构不变。
+
+
+## v0.8.1a 修复内容
+
+- **顶栏小字固定单行**：ROUTINE CONTROL、版本号与日期时间不再允许各自在空格处折行。
+- **实时时钟宽度稳定**：对该信息行启用 tabular numerals，秒数变化不再改变数字总宽度。
+- **共享品牌动画兼容**：START GATE 中的同一品牌信息块仍可按 v0.8.1 逻辑缩放、位移并归位。
+- **缓存更新**：CSS / JS cache-busting 与 Service Worker 缓存名升级至 `v0.8.1a`。
+- **数据兼容**：不修改任何模板、WEEK PLAN、TODAY Override、TYPE、NOTE、LOOK、FULL BACKUP schema v6 或铃声音频数据。
 
 ## v0.8.1 新增与调整
 
@@ -213,7 +225,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.8.1"
+git commit -m "TEMPO-7 v0.8.1a"
 git push
 ```
 
@@ -251,6 +263,11 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在保持 Local First 前提下的 Personal Cloud Sync。
 
 ## 版本记录
+
+### v0.8.1a — Microline Stability Hotfix
+- 修复顶栏 `ROUTINE CONTROL / V0.8.1a / 日期时间` 因实时时钟字符宽度变化而周期性换行的问题。
+- 品牌信息小字中的各字段固定为不可折行，并启用 tabular numerals 保持时钟更新时的几何宽度稳定。
+- Service Worker 与静态资源版本升级至 `0.8.1a`；现有数据与 FULL BACKUP schema v6 无需迁移。
 
 ### v0.8.1 — Shared Brand Transition
 - 启动页与正式顶栏改为复用同一个 TEMPO-7 品牌信息块。
