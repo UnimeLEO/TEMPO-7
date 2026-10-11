@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.7.3';
+  const APP_VERSION = '0.7.3b';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -401,7 +401,7 @@
     const context = ensureAudioContext();
     if (context.state !== 'running') await context.resume();
     soundRuntime.unlocked = context.state === 'running';
-    if (!soundRuntime.unlocked) throw new Error('浏览器没有允许音频播放。请再次点击 ENABLE SOUND。');
+    if (!soundRuntime.unlocked) throw new Error('浏览器没有允许音频播放。请再次点击 ENABLE AUDIO。');
     await Promise.allSettled(getAllSoundAssetIds().map(loadAudioBuffer));
     return true;
   }
@@ -1039,7 +1039,7 @@
       return;
     }
 
-    // Always advance the cursor. Enabling bells, changing TODAY, or START TODAY
+    // Always advance the cursor. Enabling bells, changing TODAY, or enabling audio
     // later must never retroactively fire a bell that was already missed.
     soundRuntime.lastObserved = current;
 
@@ -2166,19 +2166,10 @@
   }
 
   function renderRunButton(now = getNow()) {
-    const running = isTodayRunning(now);
-    const needsUnlock = running && settings.sound.enabled && !soundRuntime.unlocked;
-    if (!running) {
-      els.startTodayBtn.textContent = 'START TODAY';
-    } else if (needsUnlock) {
-      els.startTodayBtn.textContent = 'ENABLE SOUND';
-    } else if (settings.sound.enabled) {
-      els.startTodayBtn.textContent = 'AUDIO ENABLED';
-    } else {
-      els.startTodayBtn.textContent = 'TODAY RUNNING';
-    }
-    els.startTodayBtn.classList.toggle('btn-primary', !running || needsUnlock);
-    els.startTodayBtn.classList.toggle('status-enabled', running && !needsUnlock);
+    const audioEnabled = isTodayRunning(now) && settings.sound.enabled && soundRuntime.unlocked;
+    els.startTodayBtn.textContent = audioEnabled ? 'AUDIO ENABLED' : 'ENABLE AUDIO';
+    els.startTodayBtn.classList.toggle('btn-primary', !audioEnabled);
+    els.startTodayBtn.classList.toggle('status-enabled', audioEnabled);
   }
 
   async function startToday() {
@@ -2321,7 +2312,7 @@
       const mediaMessage = mediaResult.legacy
         ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
         : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
-      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE SOUND / START TODAY。`, true);
+      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE AUDIO。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {

@@ -1,8 +1,17 @@
-# TEMPO-7 v0.7.3 — CUSTOM TYPES / PER-TYPE BELLS / TASK NOTES
+# TEMPO-7 v0.7.3b — REGRESSION / UI HOTFIX
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
 
-v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内置 TYPE + 最多 6 个用户自定义 TYPE”，铃声系统同步升级为所有任务 TYPE 都可分别配置 ENTRY / EXIT 铃声，并为每个 TASK 新增可选的单行 NOTE。v0.7.2 的性能优化结构保持不变。
+v0.7.3b 是基于 v0.7.3 的回归 / UI 修复版本：不新增数据结构或核心功能，重点统一 AUDIO 顶栏交互，并修复进度条轨道与已完成区段视觉上难以区分的问题。v0.7.3 的自定义 TYPE、Per-Type Bells、TASK NOTE 以及 v0.7.2 的性能优化结构全部保持不变。
+
+
+## v0.7.3b 修复内容
+
+- **AUDIO 状态统一**：顶部音频按钮仅保留两个用户可见状态：未激活时为 `ENABLE AUDIO`，完成浏览器音频解锁后为绿色 `AUDIO ENABLED`。清理 `START TODAY`、`ENABLE SOUND`、`TODAY RUNNING` 等旧文案。
+- **运行语义保持不变**：点击 `ENABLE AUDIO` 仍会初始化当天铃声运行状态并完成浏览器音频解锁；仅简化用户可见交互，不改变铃声触发逻辑。
+- **进度条视觉修复**：移除整条高亮边框；未完成轨道改为当前前景色的低透明度版本，已完成 Fill 保持实色，因此 `41%` 等进度可直接从色条长度辨认。
+- **缓存更新**：CSS / JS cache-busting 与 Service Worker 缓存名升级至 `v0.7.3b`，避免 PWA 继续使用旧版样式。
+- **数据兼容**：FULL BACKUP schema、模板、WEEK PLAN、TODAY Override、自定义 TYPE、TASK NOTE 与 IndexedDB 铃声音频格式均保持 v0.7.3 兼容，不需要数据迁移。
 
 
 ## v0.7.3 新增与调整
@@ -30,7 +39,7 @@ v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内�
 - **页面隐藏降频**：页面不可见时，主运行循环由 250 ms 调整为 1000 ms；重新回到前台后立即完整刷新并恢复 250 ms。铃声跨时间点检测仍保留原有 90 秒 catch-up 保护。
 - **铃声事件缓存**：当前日程对应的铃声事件表只在日程源发生变化时重新生成，不再每个运行 tick 重新构建。
 - **铃声触发日志缓存**：当天已触发铃声记录保留内存缓存，仅在日期变化或实际新增触发记录时访问 / 写入 localStorage。
-- **运行状态缓存**：`START TODAY / AUDIO ENABLED` 的运行状态不再每 250 ms 读取 localStorage；当前标签页以内存状态为主，并保留跨标签页 `storage` 事件同步。
+- **运行状态缓存**：`ENABLE AUDIO / AUDIO ENABLED` 的运行状态不再每 250 ms 读取 localStorage；当前标签页以内存状态为主，并保留跨标签页 `storage` 事件同步。
 - **响应式巡航恢复**：窗口或 SCHEDULE 容器尺寸变化时会重新检测是否需要自动巡航，避免按需动画优化后因尺寸变化漏启滚动。
 - **不改变用户数据格式**：FULL BACKUP schema、模板、WEEK PLAN、TODAY Override、LOOK、音频 IndexedDB 均保持兼容，不需要迁移数据。
 
@@ -53,7 +62,7 @@ v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内�
 - **音频进入备份**：IndexedDB 中的上课铃 / 下课铃会以 Base64 形式封装进同一个 JSON，因此备份文件可独立迁移到另一台设备。
 - **一键恢复音频**：导入 v0.7.0 FULL BACKUP 时，同时恢复 localStorage 配置与 IndexedDB 音频；备份中未配置的铃声槽位会同步保持为空。
 - **兼容旧版 JSON**：v0.1–v0.6 以及早期 v0.7 配置备份仍可导入；旧备份没有音频本体时，不会删除当前浏览器已有铃声。
-- **会话状态不迁移**：浏览器音频解锁权限、当前 START TODAY 运行会话和当天已触发铃声记录属于设备 / 会话状态，不写入迁移备份；恢复后需重新点击一次 ENABLE SOUND / START TODAY。
+- **会话状态不迁移**：浏览器音频解锁权限、当前音频运行会话和当天已触发铃声记录属于设备 / 会话状态，不写入迁移备份；恢复后需重新点击一次 ENABLE AUDIO。
 - **Bahnschrift → DINish**：英文与数字默认字体更换为开源 DINish。
 - **项目字体优先**：CSS 优先加载 GitHub 仓库 `fonts/` 中的 DINish，不再以操作系统是否安装 Bahnschrift 为前提。
 - **DINish SemiBold / 600**：英文标签、时间、普通数字与界面文字使用 `DINish-SemiBold.ttf`。
@@ -106,7 +115,7 @@ v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内�
 - 未配置的事件保持静音；
 - 支持 MP3 / WAV、试听与清除；
 - 所有音频本体保存在 IndexedDB，并由 FULL BACKUP 以 Base64 一并迁移；
-- 浏览器重开后仍需通过 `ENABLE SOUND / START TODAY` 完成一次音频解锁。
+- 浏览器重开后仍需通过 `ENABLE AUDIO` 完成一次音频解锁。
 
 ## 外观系统使用
 
@@ -152,7 +161,7 @@ v0.7.3 是一轮任务表达能力扩展：TYPE 从固定枚举扩展为“内�
 2. 所有模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY Override、LOOK 外观、铃声设置与已导入 MP3 / WAV 会写入一个 `TEMPO-7-full-backup-YYYY-MM-DD.json`；
 3. 音频以 Base64 写入 JSON，因此备份文件通常比原始音频总大小约大三分之一；
 4. 在另一设备 / 浏览器中选择 `IMPORT BACKUP`，TEMPO-7 会同时恢复配置和铃声音频；
-5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后仍需点击一次 `ENABLE SOUND` / `START TODAY`。
+5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后仍需点击一次 `ENABLE AUDIO`。
 
 为避免产生错误的铃声行为，以下临时运行状态不会写入迁移备份：`runState`、当天铃声已触发记录、Web Audio 的解锁状态。它们会在目标设备上按新的运行会话重新建立。
 
@@ -180,7 +189,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.7.3"
+git commit -m "TEMPO-7 v0.7.3b"
 git push
 ```
 
@@ -219,6 +228,12 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 
 ## 版本记录
 
+### v0.7.3b — Regression / UI Hotfix
+- 顶部音频按钮统一为 `ENABLE AUDIO` / `AUDIO ENABLED` 两态，移除旧版 `START TODAY` / `ENABLE SOUND` / `TODAY RUNNING` 用户可见文案。
+- 修复进度条整条高亮边框导致“看起来始终满格”的视觉问题；轨道改为低透明度，Fill 保持实色。
+- Service Worker 与静态资源版本升级至 `0.7.3b`，确保 PWA 能获取修复后的 CSS / JS。
+- 不改变 v0.7.3 数据结构与备份 schema。
+
 ### v0.7.3 — Custom Types / Per-Type Bells / Task Notes
 - 最多新增 6 个用户自定义 TYPE，并提供 NAME / LABEL / COLOR 管理。
 - SOUND 重构为所有任务 TYPE 均支持独立 ENTRY / EXIT 铃声。
@@ -230,7 +245,7 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 - 拆分动态时钟刷新与静态状态刷新，减少长期运行中的重复 DOM 操作。
 - SCHEDULE 改为按需 requestAnimationFrame；无滚动需求、悬停、手动暂停、页面隐藏与边缘停顿时停止持续动画帧。
 - 页面隐藏时主 tick 降至 1000 ms，返回前台立即恢复并完整校准。
-- 缓存铃声事件表、当天触发日志和 START TODAY 运行状态，减少重复计算与 localStorage 访问。
+- 缓存铃声事件表、当天触发日志和 音频运行状态，减少重复计算与 localStorage 访问。
 - 保持 v0.7.1 的所有可见功能、交互、数据格式和备份兼容性。
 
 ### v0.7.1 — Interaction Refinement

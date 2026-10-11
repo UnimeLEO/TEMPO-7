@@ -13,7 +13,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.7.3" />
+  <link rel="stylesheet" href="style.css?v=0.7.3b" />
 </head>
 <body>
   <div id="transitionFlash" aria-hidden="true"></div>
@@ -21,7 +21,7 @@
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.3</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.3b</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -29,7 +29,7 @@
         <span>TEMPLATE</span>
         <select id="activeTemplateSelect" aria-label="当前日程模板"></select>
       </label>
-      <button id="startTodayBtn" class="btn btn-primary">START TODAY</button>
+      <button id="startTodayBtn" class="btn btn-primary">ENABLE AUDIO</button>
       <button id="installAppBtn" class="btn" hidden>INSTALL</button>
       <button id="todayBtn" class="btn">TODAY</button>
       <button id="weekPlanBtn" class="btn">WEEK</button>
@@ -245,7 +245,7 @@
       </div>
 
       <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.3 的 FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
-      <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE SOUND / START TODAY 以重新激活声音。</p>
+      <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE AUDIO 以重新激活声音。</p>
 
       <div class="data-actions">
         <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT FULL BACKUP</button>
@@ -292,7 +292,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">每个任务 TYPE 都可以分别配置 ENTRY（进入该 TYPE）与 EXIT（离开该 TYPE）铃声，支持 MP3 / WAV。没有配置的事件保持静音。页面重新打开后，需要点击一次 ENABLE SOUND 重新激活浏览器音频权限。</p>
+      <p class="modal-copy">每个任务 TYPE 都可以分别配置 ENTRY（进入该 TYPE）与 EXIT（离开该 TYPE）铃声，支持 MP3 / WAV。没有配置的事件保持静音。页面重新打开后，需要点击一次 ENABLE AUDIO 重新激活浏览器音频权限。</p>
 
       <div class="sound-master-row">
         <label class="switch-field">
@@ -421,6 +421,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.7.3"></script>
+  <script src="app.js?v=0.7.3b"></script>
 </body>
 </html>
