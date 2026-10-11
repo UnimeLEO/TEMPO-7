@@ -15,20 +15,11 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.8.0" />
+  <link rel="stylesheet" href="style.css?v=0.8.1" />
 </head>
 <body class="launch-active">
   <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
-    <section class="launch-panel launch-top">
-      <div class="launch-brand-block">
-        <div class="launch-brand">TEMPO-7</div>
-        <div class="launch-microline">
-          <span>ROUTINE CONTROL</span>
-          <span>V0.8.0</span>
-          <span id="launchTime">--:--:--</span>
-        </div>
-      </div>
-    </section>
+    <section id="launchTop" class="launch-panel launch-top" aria-hidden="true"></section>
     <section id="launchBand" class="launch-band">
       <div class="launch-band-text">&gt;&gt; PRESS ANYWHERE TO START YOUR DAY &lt;&lt;</div>
     </section>
@@ -38,9 +29,11 @@
   <div id="transitionFlash" aria-hidden="true"></div>
 
   <header class="topbar">
-    <div class="brand-wrap">
-      <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.0</span><span id="systemDate">----</span></div>
+    <div id="brandDock" class="brand-dock">
+      <div id="sharedBrandBlock" class="brand-wrap shared-brand-block">
+        <div class="brand">TEMPO-7</div>
+        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.1</span><span id="systemDate">----</span></div>
+      </div>
     </div>
 
     <div class="top-controls">
@@ -440,6 +433,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.8.0"></script>
+  <script src="app.js?v=0.8.1"></script>
 </body>
 </html>

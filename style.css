@@ -91,6 +91,7 @@ button, select { cursor: pointer; }
   background: var(--topbar);
 }
 .brand { font-family: var(--font-display); font-size: 27px; font-weight: 600; letter-spacing: .16em; }
+.brand-dock { min-width: 230px; min-height: 43px; flex: 0 0 auto; position: relative; }
 .brand-wrap { min-width: 230px; }
 .microline {
   margin-top: 5px;
@@ -848,7 +849,7 @@ html[data-transition="none"] .hero { transition: none; }
 }
 
 
-/* v0.8.0 — launch gate + compact AUDIO status control */
+/* v0.8.1 — shared-brand launch gate + compact AUDIO status control */
 body.launch-active { overflow: hidden; }
 
 .launch-overlay {
@@ -872,33 +873,76 @@ body.launch-active { overflow: hidden; }
 .launch-panel {
   position: relative;
   background: #090a0c;
-  transition: transform .78s cubic-bezier(.76,0,.24,1), opacity .64s ease;
+  transition: transform .82s cubic-bezier(.76,0,.24,1), opacity .68s ease;
 }
-.launch-top {
-  display: flex;
-  align-items: flex-end;
-  padding: clamp(28px, 5vw, 72px);
-  padding-bottom: clamp(30px, 5vh, 58px);
-}
+.launch-top { border-bottom: 1px solid rgba(255,255,255,.025); }
 .launch-bottom { border-top: 1px solid rgba(255,255,255,.04); }
-.launch-brand-block { display: grid; gap: 12px; }
-.launch-brand {
-  font-family: var(--font-display);
+
+/* The actual topbar identity block is reused as the launch identity. During
+   launch it is temporarily fixed above the overlay, then docks back into its
+   normal topbar slot. There is no second TEMPO-7 block to swap in. */
+body.launch-active .shared-brand-block {
+  position: fixed;
+  z-index: 3002;
+  left: var(--launch-brand-left, 72px);
+  top: var(--launch-brand-top, 120px);
+  min-width: 0;
+  width: var(--launch-brand-width, max-content);
+  max-width: calc(100vw - 40px);
+  color: #f1f2f0;
+  pointer-events: none;
+  will-change: left, top;
+  transition:
+    left .82s cubic-bezier(.76,0,.24,1),
+    top .82s cubic-bezier(.76,0,.24,1),
+    color .5s ease,
+    min-width .82s cubic-bezier(.76,0,.24,1),
+    width .82s cubic-bezier(.76,0,.24,1);
+}
+body.launch-active .shared-brand-block .brand {
   font-size: clamp(48px, 8vw, 108px);
-  font-weight: 600;
   line-height: .9;
   letter-spacing: .13em;
+  transition:
+    font-size .82s cubic-bezier(.76,0,.24,1),
+    line-height .82s cubic-bezier(.76,0,.24,1),
+    letter-spacing .82s cubic-bezier(.76,0,.24,1);
 }
-.launch-microline {
-  display: flex;
+body.launch-active .shared-brand-block .microline {
+  margin-top: 12px;
   flex-wrap: wrap;
   gap: 12px 18px;
   color: #a3a8ad;
-  font-family: var(--font-mono);
   font-size: clamp(10px, 1.1vw, 14px);
-  font-weight: 600;
   letter-spacing: .12em;
+  transition:
+    margin-top .82s cubic-bezier(.76,0,.24,1),
+    gap .82s cubic-bezier(.76,0,.24,1),
+    color .5s ease,
+    font-size .82s cubic-bezier(.76,0,.24,1),
+    letter-spacing .82s cubic-bezier(.76,0,.24,1);
 }
+body.launch-active.launch-settling .shared-brand-block {
+  left: var(--brand-dock-left, 24px);
+  top: var(--brand-dock-top, 16px);
+  min-width: 230px;
+  width: var(--brand-dock-width, 230px);
+  max-width: none;
+  color: var(--text);
+}
+body.launch-active.launch-settling .shared-brand-block .brand {
+  font-size: 27px;
+  line-height: normal;
+  letter-spacing: .16em;
+}
+body.launch-active.launch-settling .shared-brand-block .microline {
+  margin-top: 5px;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
 .launch-band {
   position: relative;
   display: grid;
@@ -955,12 +999,16 @@ body.launch-active { overflow: hidden; }
 
 @media (max-width: 640px) {
   .launch-overlay { grid-template-rows: minmax(0, 1fr) 78px minmax(0, 1fr); }
-  .launch-top { padding: 28px 20px; padding-bottom: 28px; }
-  .launch-brand { font-size: clamp(42px, 15vw, 72px); }
+  body.launch-active .shared-brand-block { max-width: calc(100vw - 28px); }
+  body.launch-active .shared-brand-block .brand { font-size: clamp(42px, 15vw, 72px); }
+  body.launch-active.launch-settling .shared-brand-block .brand { font-size: 27px; }
   .launch-band { padding: 0 12px; }
   .launch-band-text { font-size: clamp(10px, 2.8vw, 14px); letter-spacing: .1em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .launch-panel, .launch-band { transition-duration: .18s; }
+  .launch-panel, .launch-band,
+  body.launch-active .shared-brand-block,
+  body.launch-active .shared-brand-block .brand,
+  body.launch-active .shared-brand-block .microline { transition-duration: .18s; }
 }

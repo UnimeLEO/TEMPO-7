@@ -1,8 +1,19 @@
-# TEMPO-7 v0.8.0 — START GATE / AUDIO INTERACTION
+# TEMPO-7 v0.8.1 — SHARED BRAND TRANSITION
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
 
-v0.8.0 将浏览器所需的音频 user gesture 融入启动体验：打开 TEMPO-7 时先显示全屏启动层，点击任意位置即可开始当天运行并尝试解锁音频；顶栏 AUDIO 则保留为手动启用 / 禁用与故障恢复入口。v0.7.3b 的回归修复、v0.7.3 的 TYPE / Bell / NOTE 功能以及 v0.7.2 的性能优化均保持不变。
+v0.8.1 继续沿用 v0.8.0 的 START GATE 与 AUDIO 交互，但重做了开屏到主界面的品牌过渡：开屏中的 TEMPO-7 / ROUTINE CONTROL / 版本 / 时间不再作为独立元素飞出后被另一份顶栏信息替换，而是由同一个信息块在开场过程中同步缩小、位移并归位到正式顶栏。其余 v0.8.0 功能与既有数据结构保持不变。
+
+
+## v0.8.1 新增与调整
+
+- **共享品牌元素（Shared Brand）**：启动页与正式顶栏共用同一个 TEMPO-7 信息块，不再维护两份视觉上相同的品牌元素。
+- **同步缩放与位移**：点击启动页后，TEMPO-7、ROUTINE CONTROL、版本和时钟作为一个整体向左上方移动，同时逐步缩小到正式顶栏尺寸。
+- **真实归位**：动画终点由正式顶栏的实际布局位置动态计算，而不是写死像素路径；窗口尺寸变化后仍会落入当前响应式布局中的正确位置。
+- **面板动画保持**：上下黑色启动面板继续向相反方向打开，中间状态色横条继续收拢淡出，与品牌归位动画同步进行。
+- **同一 DOM 元素延续**：动画结束后不进行品牌块的视觉替换，移动中的信息块直接恢复为顶栏正常布局元素，减少开屏与主界面之间的断层感。
+- **缓存更新**：CSS / JS cache-busting 与 Service Worker 缓存名升级至 `v0.8.1`。
+- **数据兼容**：不修改模板、WEEK PLAN、TODAY Override、自定义 TYPE、TASK NOTE、LOOK、FULL BACKUP schema v6 或 IndexedDB 铃声音频格式。
 
 
 ## v0.8.0 新增与调整
@@ -202,7 +213,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.8.0"
+git commit -m "TEMPO-7 v0.8.1"
 git push
 ```
 
@@ -240,6 +251,12 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在保持 Local First 前提下的 Personal Cloud Sync。
 
 ## 版本记录
+
+### v0.8.1 — Shared Brand Transition
+- 启动页与正式顶栏改为复用同一个 TEMPO-7 品牌信息块。
+- 点击开始后，品牌信息与附属信息同步缩小、向左上方移动，并归位到正式顶栏的实际响应式位置。
+- 上下启动面板与状态色横条的原有退出动画继续保留，并与品牌归位同步执行。
+- Service Worker 与静态资源版本升级至 `0.8.1`；现有数据与 FULL BACKUP schema v6 无需迁移。
 
 ### v0.8.0 — Start Gate / Audio Interaction
 - 新增全屏 START GATE，以 `>> PRESS ANYWHERE TO START YOUR DAY <<` 作为统一进入动作。

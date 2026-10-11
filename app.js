@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.0';
+  const APP_VERSION = '0.8.1';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -144,7 +144,7 @@
 
   const $ = (id) => document.getElementById(id);
   const els = {
-    launchOverlay: $('launchOverlay'), launchBand: $('launchBand'), launchTime: $('launchTime'),
+    launchOverlay: $('launchOverlay'), launchTop: $('launchTop'), launchBand: $('launchBand'), brandDock: $('brandDock'), sharedBrandBlock: $('sharedBrandBlock'),
     hero: $('hero'), currentTaskName: $('currentTaskName'), currentTaskNote: $('currentTaskNote'), currentTaskRange: $('currentTaskRange'),
     categoryBadge: $('categoryBadge'), countdown: $('countdown'), countdownLabel: $('countdownLabel'),
     progressFill: $('progressFill'), progressPercent: $('progressPercent'), progressLabel: $('progressLabel'),
@@ -1231,7 +1231,6 @@
 
   function renderDynamicRuntime(now, state, sec) {
     setTextIfChanged(els.systemDate, `${formatDate(now)} ${formatClock(now)}`);
-    if (els.launchTime) setTextIfChanged(els.launchTime, formatClock(now));
 
     if (state.mode === 'ended') {
       setTextIfChanged(els.countdown, '--:--');
@@ -2235,16 +2234,87 @@
     renderRunButton(now);
   }
 
+  function sizeBrandDock() {
+    if (!els.brandDock || !els.sharedBrandBlock) return;
+
+    const probe = els.sharedBrandBlock.cloneNode(true);
+    probe.removeAttribute('id');
+    probe.classList.remove('shared-brand-block');
+    probe.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+    Object.assign(probe.style, {
+      position: 'fixed',
+      left: '-10000px',
+      top: '-10000px',
+      width: 'max-content',
+      minWidth: '230px',
+      maxWidth: 'none',
+      visibility: 'hidden',
+      pointerEvents: 'none'
+    });
+    document.body.appendChild(probe);
+    const probeRect = probe.getBoundingClientRect();
+    probe.remove();
+
+    const availableWidth = Math.max(230, window.innerWidth - (window.innerWidth <= 560 ? 28 : 48));
+    els.brandDock.style.width = `${Math.min(probeRect.width, availableWidth)}px`;
+    els.brandDock.style.height = `${probeRect.height}px`;
+  }
+
+  function positionLaunchBrand() {
+    if (!els.sharedBrandBlock || !els.launchTop || !document.body.classList.contains('launch-active') || document.body.classList.contains('launch-settling')) return;
+
+    sizeBrandDock();
+    const topRect = els.launchTop.getBoundingClientRect();
+    els.sharedBrandBlock.style.removeProperty('--launch-brand-width');
+    const brandRect = els.sharedBrandBlock.getBoundingClientRect();
+    const isCompact = window.innerWidth <= 640;
+    const leftPad = isCompact ? 20 : Math.min(72, Math.max(28, window.innerWidth * 0.05));
+    const bottomPad = isCompact ? 28 : Math.min(58, Math.max(30, window.innerHeight * 0.05));
+    const top = Math.max(18, topRect.bottom - bottomPad - brandRect.height);
+
+    els.sharedBrandBlock.style.setProperty('--launch-brand-left', `${leftPad}px`);
+    els.sharedBrandBlock.style.setProperty('--launch-brand-top', `${top}px`);
+    els.sharedBrandBlock.style.setProperty('--launch-brand-width', `${brandRect.width}px`);
+  }
+
+  function setBrandDockTarget() {
+    if (!els.brandDock || !els.sharedBrandBlock) return;
+    const dockRect = els.brandDock.getBoundingClientRect();
+    els.sharedBrandBlock.style.setProperty('--brand-dock-left', `${dockRect.left}px`);
+    els.sharedBrandBlock.style.setProperty('--brand-dock-top', `${dockRect.top}px`);
+    els.sharedBrandBlock.style.setProperty('--brand-dock-width', `${dockRect.width}px`);
+  }
+
+  function clearLaunchBrandGeometry() {
+    if (!els.sharedBrandBlock) return;
+    for (const prop of ['--launch-brand-left', '--launch-brand-top', '--launch-brand-width', '--brand-dock-left', '--brand-dock-top', '--brand-dock-width']) {
+      els.sharedBrandBlock.style.removeProperty(prop);
+    }
+  }
+
   function dismissLaunchOverlay() {
     if (!els.launchOverlay || els.launchOverlay.hidden || els.launchOverlay.classList.contains('is-opening')) return;
+
+    // Keep the exact same TEMPO-7 identity block alive through the transition:
+    // first freeze its launch geometry, then move and resize it into the real
+    // topbar dock while the surrounding launch panels open away from it.
+    positionLaunchBrand();
+    setBrandDockTarget();
+    void els.sharedBrandBlock?.offsetWidth;
+
     els.launchOverlay.classList.add('is-opening');
-    document.body.classList.remove('launch-active');
+    document.body.classList.add('launch-settling');
     enableAudioFromGesture();
+
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     window.setTimeout(() => {
       els.launchOverlay.hidden = true;
       els.launchOverlay.classList.remove('is-opening');
+      document.body.classList.remove('launch-settling', 'launch-active');
+      clearLaunchBrandGeometry();
+      render();
       requestScheduleCruise();
-    }, 820);
+    }, reducedMotion ? 220 : 860);
   }
 
   async function exportJson() {
@@ -2605,6 +2675,8 @@
       scheduleCruise.lastFrameMs = null;
       requestScheduleCruise();
       refreshAllNoteMarquees();
+      sizeBrandDock();
+      positionLaunchBrand();
     }, { passive: true });
 
     if ('ResizeObserver' in window) {
@@ -2623,6 +2695,12 @@
     refreshInstallButton();
     resetSoundEventCursor();
     render();
+    sizeBrandDock();
+    requestAnimationFrame(positionLaunchBrand);
+    document.fonts?.ready?.then(() => {
+      sizeBrandDock();
+      positionLaunchBrand();
+    }).catch(() => {});
     scheduleNextRuntimeTick();
     requestScheduleCruise();
   }
