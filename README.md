@@ -1,8 +1,8 @@
-# TEMPO-7 v0.8.2 — PERSONAL CLOUD SYNC
+# TEMPO-7 v0.8.2a — PERSONAL CLOUD SYNC
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用、完整 JSON 备份与跨设备 Personal Cloud Sync。
 
-v0.8.2 在 v0.8.1a 的 START GATE、Shared Brand 动画与稳定顶栏基础上加入单用户云同步。正式运行数据仍保存在当前浏览器；Cloudflare Worker + D1 + R2 只承担跨设备同步，因此离线时 TEMPO-7 仍然可以照常运行。
+v0.8.2a 基于 v0.8.2；v0.8.2 在 v0.8.1a 的 START GATE、Shared Brand 动画与稳定顶栏基础上加入单用户云同步。正式运行数据仍保存在当前浏览器；Cloudflare Worker + D1 + R2 只承担跨设备同步，因此离线时 TEMPO-7 仍然可以照常运行。
 
 ## v0.8.2 新增与调整
 
@@ -261,7 +261,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.8.2"
+git commit -m "TEMPO-7 v0.8.2a"
 git push
 ```
 
@@ -302,6 +302,14 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在云同步基础上的进一步多设备体验优化。
 
 ## 版本记录
+
+
+### v0.8.2a — NOTE Space Input Hotfix
+
+- 修复 NOTE/备注输入框无法输入空格的问题：编辑过程中不再对尾部空格执行即时 `trim()`。
+- NOTE 保存时仍保持单行、最多 200 字符及原有规范化逻辑。
+- Cloud Sync 后端、数据结构与 API 均无变化，无需重新部署 Worker 或执行 SQL。
+- Service Worker 与静态资源版本升级至 `0.8.2a`。
 
 ### v0.8.2 — Personal Cloud Sync
 - 新增单用户 Personal Cloud Sync：通过 Cloudflare Worker + D1 + R2 在多设备之间同步 TEMPO-7。

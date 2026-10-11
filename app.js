@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.2';
+  const APP_VERSION = '0.8.2a';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -1390,6 +1390,12 @@
     return String(value ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
   }
 
+  // Live NOTE editing must preserve a trailing space while the user is typing.
+  // Final save/normalization still goes through sanitizeSingleLine().
+  function sanitizeSingleLineLive(value, maxLength) {
+    return String(value ?? '').replace(/[\r\n]+/g, ' ').slice(0, maxLength);
+  }
+
   function normalizeCustomType(raw, index = 0) {
     const idText = String(raw?.id || '');
     const id = idText && !BUILT_IN_TYPE_IDS.includes(idText) && !['free', 'ended'].includes(idText)
@@ -2340,7 +2346,7 @@
     const input = node.querySelector('.row-note');
     const counter = node.querySelector('.note-counter');
     const update = () => {
-      input.value = sanitizeSingleLine(input.value, NOTE_MAX_LENGTH);
+      input.value = sanitizeSingleLineLive(input.value, NOTE_MAX_LENGTH);
       counter.textContent = `${input.value.length} / ${NOTE_MAX_LENGTH}`;
       toggle.classList.toggle('has-note', !!input.value);
       toggle.title = input.value ? '编辑 NOTE' : '添加 NOTE';
