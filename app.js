@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.7.3b';
+  const APP_VERSION = '0.8.0';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -144,6 +144,7 @@
 
   const $ = (id) => document.getElementById(id);
   const els = {
+    launchOverlay: $('launchOverlay'), launchBand: $('launchBand'), launchTime: $('launchTime'),
     hero: $('hero'), currentTaskName: $('currentTaskName'), currentTaskNote: $('currentTaskNote'), currentTaskRange: $('currentTaskRange'),
     categoryBadge: $('categoryBadge'), countdown: $('countdown'), countdownLabel: $('countdownLabel'),
     progressFill: $('progressFill'), progressPercent: $('progressPercent'), progressLabel: $('progressLabel'),
@@ -401,7 +402,7 @@
     const context = ensureAudioContext();
     if (context.state !== 'running') await context.resume();
     soundRuntime.unlocked = context.state === 'running';
-    if (!soundRuntime.unlocked) throw new Error('浏览器没有允许音频播放。请再次点击 ENABLE AUDIO。');
+    if (!soundRuntime.unlocked) throw new Error('浏览器没有允许音频播放。请点击 AUDIO 重试。');
     await Promise.allSettled(getAllSoundAssetIds().map(loadAudioBuffer));
     return true;
   }
@@ -1121,6 +1122,10 @@
     document.documentElement.style.setProperty('--accent', meta.color);
     document.documentElement.style.setProperty('--accent-ink', meta.ink);
     els.hero.dataset.state = category;
+    if (els.launchOverlay) {
+      els.launchOverlay.style.setProperty('--launch-accent', meta.color);
+      els.launchOverlay.style.setProperty('--launch-ink', meta.ink);
+    }
     return meta;
   }
 
@@ -1226,6 +1231,7 @@
 
   function renderDynamicRuntime(now, state, sec) {
     setTextIfChanged(els.systemDate, `${formatDate(now)} ${formatClock(now)}`);
+    if (els.launchTime) setTextIfChanged(els.launchTime, formatClock(now));
 
     if (state.mode === 'ended') {
       setTextIfChanged(els.countdown, '--:--');
@@ -2165,28 +2171,80 @@
     return runState.date === formatDate(now) && runState.active === true;
   }
 
+  function ensureTodayRunState(now = getNow()) {
+    if (isTodayRunning(now)) return;
+    runState = { active: true, date: formatDate(now), startedAt: now.toISOString() };
+    localStorage.setItem(STORAGE_KEYS.runState, JSON.stringify(runState));
+  }
+
+  function isAudioEnabled(now = getNow()) {
+    return isTodayRunning(now) && settings.sound.enabled && soundRuntime.unlocked;
+  }
+
   function renderRunButton(now = getNow()) {
-    const audioEnabled = isTodayRunning(now) && settings.sound.enabled && soundRuntime.unlocked;
-    els.startTodayBtn.textContent = audioEnabled ? 'AUDIO ENABLED' : 'ENABLE AUDIO';
-    els.startTodayBtn.classList.toggle('btn-primary', !audioEnabled);
+    const audioEnabled = isAudioEnabled(now);
+    els.startTodayBtn.textContent = 'AUDIO';
+    els.startTodayBtn.dataset.audioStatus = audioEnabled ? 'ENABLED' : 'DISABLED';
+    els.startTodayBtn.setAttribute('aria-label', `Audio ${audioEnabled ? 'enabled' : 'disabled'}`);
+    els.startTodayBtn.classList.remove('btn-primary');
     els.startTodayBtn.classList.toggle('status-enabled', audioEnabled);
   }
 
-  async function startToday() {
+  async function enableAudioFromGesture() {
     const now = getNow();
-    if (!isTodayRunning(now)) {
-      runState = { active: true, date: formatDate(now), startedAt: now.toISOString() };
-      localStorage.setItem(STORAGE_KEYS.runState, JSON.stringify(runState));
-    }
+    ensureTodayRunState(now);
     resetSoundEventCursor();
-    if (settings.sound.enabled) {
-      try {
-        await unlockAudio();
-      } catch (err) {
-        showSoundMessage(err.message || '无法激活浏览器音频。', false);
-      }
+    if (!settings.sound.enabled) {
+      renderRunButton(now);
+      return false;
     }
-    renderRunButton();
+    try {
+      await unlockAudio();
+      renderRunButton(now);
+      return true;
+    } catch (err) {
+      soundRuntime.unlocked = false;
+      console.warn('TEMPO-7 audio unlock failed:', err);
+      renderRunButton(now);
+      return false;
+    }
+  }
+
+  async function toggleAudioControl() {
+    const now = getNow();
+    if (isAudioEnabled(now)) {
+      settings.sound.enabled = false;
+      saveAll();
+      els.soundEnabledInput.checked = false;
+      resetSoundEventCursor();
+      renderRunButton(now);
+      return;
+    }
+
+    settings.sound.enabled = true;
+    saveAll();
+    els.soundEnabledInput.checked = true;
+    ensureTodayRunState(now);
+    resetSoundEventCursor();
+    try {
+      await unlockAudio();
+    } catch (err) {
+      soundRuntime.unlocked = false;
+      console.warn('TEMPO-7 manual audio enable failed:', err);
+    }
+    renderRunButton(now);
+  }
+
+  function dismissLaunchOverlay() {
+    if (!els.launchOverlay || els.launchOverlay.hidden || els.launchOverlay.classList.contains('is-opening')) return;
+    els.launchOverlay.classList.add('is-opening');
+    document.body.classList.remove('launch-active');
+    enableAudioFromGesture();
+    window.setTimeout(() => {
+      els.launchOverlay.hidden = true;
+      els.launchOverlay.classList.remove('is-opening');
+      requestScheduleCruise();
+    }, 820);
   }
 
   async function exportJson() {
@@ -2312,7 +2370,7 @@
       const mediaMessage = mediaResult.legacy
         ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
         : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
-      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 恢复后请重新点击 ENABLE AUDIO。`, true);
+      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 重新打开或点击 AUDIO 后可恢复音频播放。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -2387,7 +2445,14 @@
       render();
     });
 
-    els.startTodayBtn.addEventListener('click', startToday);
+    els.startTodayBtn.addEventListener('click', toggleAudioControl);
+    els.launchOverlay?.addEventListener('click', dismissLaunchOverlay);
+    els.launchOverlay?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        dismissLaunchOverlay();
+      }
+    });
     els.installAppBtn?.addEventListener('click', installTempo7);
     els.todayBtn.addEventListener('click', () => {
       renderTodayEditor();

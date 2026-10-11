@@ -1,8 +1,21 @@
-# TEMPO-7 v0.7.3b — REGRESSION / UI HOTFIX
+# TEMPO-7 v0.8.0 — START GATE / AUDIO INTERACTION
 
 TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
 
-v0.7.3b 是基于 v0.7.3 的回归 / UI 修复版本：不新增数据结构或核心功能，重点统一 AUDIO 顶栏交互，并修复进度条轨道与已完成区段视觉上难以区分的问题。v0.7.3 的自定义 TYPE、Per-Type Bells、TASK NOTE 以及 v0.7.2 的性能优化结构全部保持不变。
+v0.8.0 将浏览器所需的音频 user gesture 融入启动体验：打开 TEMPO-7 时先显示全屏启动层，点击任意位置即可开始当天运行并尝试解锁音频；顶栏 AUDIO 则保留为手动启用 / 禁用与故障恢复入口。v0.7.3b 的回归修复、v0.7.3 的 TYPE / Bell / NOTE 功能以及 v0.7.2 的性能优化均保持不变。
+
+
+## v0.8.0 新增与调整
+
+- **START GATE**：每次打开页面 / PWA 时先显示全屏启动层，包含 TEMPO-7、ROUTINE CONTROL、当前版本与实时时钟。
+- **PRESS ANYWHERE**：启动横条固定显示 `>> PRESS ANYWHERE TO START YOUR DAY <<`，横条颜色跟随当前任务 TYPE / FREE / END 状态色。
+- **启动即解锁音频**：点击启动层任意位置会建立当天运行会话，并在浏览器允许的情况下完成 Web Audio 解锁；不再要求额外点击专门的 ENABLE AUDIO 按钮。
+- **信封式开场过渡**：启动层上下黑色面板向相反方向移出，中间状态色横条同步收拢并淡出，露出正常 TEMPO-7 主界面。
+- **AUDIO 控件简化**：顶栏按钮始终只显示 `AUDIO`；绿色表示当前音频已启用，普通样式表示未启用。
+- **AUDIO 悬停状态**：hover / keyboard focus 时显示小字 `ENABLED` 或 `DISABLED`。
+- **手动音频控制保留**：AUDIO 可随时用于禁用音频、重新启用或在浏览器音频状态异常时手动恢复。
+- **缓存更新**：CSS / JS cache-busting 与 Service Worker 缓存名升级至 `v0.8.0`。
+- **数据兼容**：模板、WEEK PLAN、TODAY Override、自定义 TYPE、TASK NOTE、LOOK、FULL BACKUP schema v6 与 IndexedDB 铃声音频格式保持兼容，不需要迁移。
 
 
 ## v0.7.3b 修复内容
@@ -115,7 +128,7 @@ v0.7.3b 是基于 v0.7.3 的回归 / UI 修复版本：不新增数据结构或�
 - 未配置的事件保持静音；
 - 支持 MP3 / WAV、试听与清除；
 - 所有音频本体保存在 IndexedDB，并由 FULL BACKUP 以 Base64 一并迁移；
-- 浏览器重开后仍需通过 `ENABLE AUDIO` 完成一次音频解锁。
+- 每次重新打开页面 / PWA 时，通过启动页任意点击建立当天运行会话并尝试解锁音频；顶栏 `AUDIO` 可用于手动禁用、重新启用或故障恢复。
 
 ## 外观系统使用
 
@@ -151,7 +164,7 @@ v0.7.3b 是基于 v0.7.3 的回归 / UI 修复版本：不新增数据结构或�
 2. `SAVE & APPLY TO TODAY`：创建新模板，并把这份日程仅应用到今天。若 WEEK PLAN 已启用，其星期映射保持原样。
 3. `SAVE & APPLY TO WEEK PLAN`：仅在 WEEK PLAN 已启用时可用；创建新模板、立即应用到今天，并把当前星期在 WEEK PLAN 中改绑到新模板。WEEK 关闭时该按钮灰显，悬停提示 `WEEK is not enabled`。
 
-当 TODAY Override 实际生效时，顶部 `TODAY` 按钮使用与 `AUDIO ENABLED` 相同的绿色状态，而不再添加星号。
+当 TODAY Override 实际生效时，顶部 `TODAY` 按钮使用与已启用 `AUDIO` 相同的绿色状态，而不再添加星号。
 
 ## 完整备份与恢复
 
@@ -161,7 +174,7 @@ v0.7.3b 是基于 v0.7.3 的回归 / UI 修复版本：不新增数据结构或�
 2. 所有模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY Override、LOOK 外观、铃声设置与已导入 MP3 / WAV 会写入一个 `TEMPO-7-full-backup-YYYY-MM-DD.json`；
 3. 音频以 Base64 写入 JSON，因此备份文件通常比原始音频总大小约大三分之一；
 4. 在另一设备 / 浏览器中选择 `IMPORT BACKUP`，TEMPO-7 会同时恢复配置和铃声音频；
-5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后仍需点击一次 `ENABLE AUDIO`。
+5. 浏览器的音频播放授权无法跨设备迁移，因此恢复后需重新经过启动页点击或手动点击 `AUDIO` 完成音频解锁。
 
 为避免产生错误的铃声行为，以下临时运行状态不会写入迁移备份：`runState`、当天铃声已触发记录、Web Audio 的解锁状态。它们会在目标设备上按新的运行会话重新建立。
 
@@ -189,7 +202,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.7.3b"
+git commit -m "TEMPO-7 v0.8.0"
 git push
 ```
 
@@ -224,9 +237,17 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 
 ## 后续前瞻
 
-后续小版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画；v0.8.0 仍计划作为 Account & Cloud Sync 主版本。
+后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在保持 Local First 前提下的 Personal Cloud Sync。
 
 ## 版本记录
+
+### v0.8.0 — Start Gate / Audio Interaction
+- 新增全屏 START GATE，以 `>> PRESS ANYWHERE TO START YOUR DAY <<` 作为统一进入动作。
+- 启动页横条跟随当前任务状态色，点击后以面板上下分离的开场动画进入主界面。
+- 启动点击同时建立当天运行会话并尝试完成浏览器 Web Audio 解锁。
+- 顶栏音频按钮简化为固定文案 `AUDIO`，通过绿色 / 普通颜色表示启用状态，并在悬停时显示 `ENABLED` / `DISABLED`。
+- AUDIO 继续保留手动禁用、重新启用与故障恢复能力。
+- Service Worker 与静态资源版本升级至 `0.8.0`；现有数据与 FULL BACKUP schema v6 无需迁移。
 
 ### v0.7.3b — Regression / UI Hotfix
 - 顶部音频按钮统一为 `ENABLE AUDIO` / `AUDIO ENABLED` 两态，移除旧版 `START TODAY` / `ENABLE SOUND` / `TODAY RUNNING` 用户可见文案。

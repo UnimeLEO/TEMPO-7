@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#17191c" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet" />
   <meta name="application-name" content="TEMPO-7" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,15 +15,32 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.7.3b" />
+  <link rel="stylesheet" href="style.css?v=0.8.0" />
 </head>
-<body>
+<body class="launch-active">
+  <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
+    <section class="launch-panel launch-top">
+      <div class="launch-brand-block">
+        <div class="launch-brand">TEMPO-7</div>
+        <div class="launch-microline">
+          <span>ROUTINE CONTROL</span>
+          <span>V0.8.0</span>
+          <span id="launchTime">--:--:--</span>
+        </div>
+      </div>
+    </section>
+    <section id="launchBand" class="launch-band">
+      <div class="launch-band-text">&gt;&gt; PRESS ANYWHERE TO START YOUR DAY &lt;&lt;</div>
+    </section>
+    <section class="launch-panel launch-bottom" aria-hidden="true"></section>
+  </div>
+
   <div id="transitionFlash" aria-hidden="true"></div>
 
   <header class="topbar">
     <div class="brand-wrap">
       <div class="brand">TEMPO-7</div>
-      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.7.3b</span><span id="systemDate">----</span></div>
+      <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.0</span><span id="systemDate">----</span></div>
     </div>
 
     <div class="top-controls">
@@ -29,7 +48,7 @@
         <span>TEMPLATE</span>
         <select id="activeTemplateSelect" aria-label="当前日程模板"></select>
       </label>
-      <button id="startTodayBtn" class="btn btn-primary">ENABLE AUDIO</button>
+      <button id="startTodayBtn" class="btn audio-status-btn" data-audio-status="DISABLED" aria-label="Audio control">AUDIO</button>
       <button id="installAppBtn" class="btn" hidden>INSTALL</button>
       <button id="todayBtn" class="btn">TODAY</button>
       <button id="weekPlanBtn" class="btn">WEEK</button>
@@ -245,7 +264,7 @@
       </div>
 
       <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.3 的 FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
-      <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后仍需点击一次 ENABLE AUDIO 以重新激活声音。</p>
+      <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后请重新经过启动页点击，或使用顶栏 AUDIO 手动恢复声音。</p>
 
       <div class="data-actions">
         <button type="button" id="exportJsonBtn" class="btn btn-primary">EXPORT FULL BACKUP</button>
@@ -292,7 +311,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">每个任务 TYPE 都可以分别配置 ENTRY（进入该 TYPE）与 EXIT（离开该 TYPE）铃声，支持 MP3 / WAV。没有配置的事件保持静音。页面重新打开后，需要点击一次 ENABLE AUDIO 重新激活浏览器音频权限。</p>
+      <p class="modal-copy">每个任务 TYPE 都可以分别配置 ENTRY（进入该 TYPE）与 EXIT（离开该 TYPE）铃声，支持 MP3 / WAV。没有配置的事件保持静音。页面重新打开后，通过启动页点击即可尝试解锁浏览器音频；也可使用顶栏 AUDIO 手动恢复。</p>
 
       <div class="sound-master-row">
         <label class="switch-field">
@@ -421,6 +440,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.7.3b"></script>
+  <script src="app.js?v=0.8.0"></script>
 </body>
 </html>
