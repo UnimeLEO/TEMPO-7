@@ -1,7 +1,7 @@
 {
   "name": "TEMPO-7",
   "short_name": "TEMPO-7",
-  "description": "A local-first routine control and countdown system.",
+  "description": "A local-first routine control and countdown system with personal cloud sync.",
   "lang": "zh-CN",
   "id": "./",
   "start_url": "./",

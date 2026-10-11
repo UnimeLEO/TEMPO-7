@@ -251,6 +251,168 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .split-actions { justify-content: space-between; }
 .right-actions, .data-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .data-actions { margin-top: 22px; }
+
+/* v0.8.2 — Personal Cloud Sync */
+.cloud-sync-panel {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.cloud-sync-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cloud-sync-head h3 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  letter-spacing: .02em;
+}
+.cloud-status {
+  flex: 0 0 auto;
+  min-width: 118px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .11em;
+  text-align: center;
+}
+.cloud-status[data-status="UP TO DATE"],
+.cloud-status[data-status="CONNECTED"] {
+  border-color: #426e59;
+  background: #17241d;
+  color: #9fe0bd;
+}
+.cloud-status[data-status="SYNCING"],
+.cloud-status[data-status="CONNECTING"],
+.cloud-status[data-status="LOCAL CHANGES"] {
+  border-color: #7e6a3e;
+  background: #292315;
+  color: #e7cf92;
+}
+.cloud-status[data-status="CONFLICT"],
+.cloud-status[data-status="ERROR"] {
+  border-color: #7f4848;
+  background: #2a1b1b;
+  color: #ffb0b0;
+}
+.cloud-status[data-status="OFFLINE"] {
+  border-color: #555c63;
+  color: #b7bdc3;
+}
+.cloud-endpoint-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel2) 82%, transparent);
+}
+.cloud-endpoint-row > span,
+.cloud-meta-cell > span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .11em;
+}
+.cloud-endpoint-row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-connect-view,
+.cloud-connected-view {
+  margin-top: 14px;
+}
+.cloud-connect-view .field { margin: 0; }
+.cloud-connect-view input { font-family: var(--font-mono); }
+.cloud-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cloud-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.cloud-meta-cell {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+}
+.cloud-meta-cell strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-conflict-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #7f4848;
+  background: #241919;
+}
+.cloud-conflict-panel > strong {
+  display: block;
+  margin-top: 5px;
+  color: #ffd0d0;
+  font-size: 15px;
+}
+.cloud-conflict-panel > p {
+  margin: 7px 0 0;
+  color: #d5aaaa;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cloud-conflict-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cloud-conflict-meta span {
+  padding: 8px 9px;
+  border: 1px solid #603a3a;
+  color: #e2baba;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.45;
+  letter-spacing: .06em;
+}
+.cloud-status-detail {
+  margin-top: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+}
+
+@media (max-width: 640px) {
+  .cloud-sync-head { align-items: stretch; flex-direction: column; }
+  .cloud-status { width: 100%; }
+  .cloud-meta-grid, .cloud-conflict-meta { grid-template-columns: 1fr; }
+  .cloud-endpoint-row { grid-template-columns: 1fr; gap: 5px; }
+}
 .file-btn { display: inline-flex; align-items: center; }
 .file-btn input { display: none; }
 

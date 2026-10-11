@@ -1,13 +1,21 @@
-# TEMPO-7 v0.8.1a — MICROLINE STABILITY HOTFIX
+# TEMPO-7 v0.8.2 — PERSONAL CLOUD SYNC
 
-TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用与完整 JSON 备份。
+TEMPO-7 是一个本地优先（local-first）的规律作息执行器：根据预设时间段自动判断当前任务、显示倒计时和进度、播放任务铃声，并支持 TODAY 临时修改、WEEK PLAN 周计划、外观自定义、PWA 安装、离线使用、完整 JSON 备份与跨设备 Personal Cloud Sync。
 
-v0.8.1 继续沿用 v0.8.0 的 START GATE 与 AUDIO 交互，但重做了开屏到主界面的品牌过渡：开屏中的 TEMPO-7 / ROUTINE CONTROL / 版本 / 时间不再作为独立元素飞出后被另一份顶栏信息替换，而是由同一个信息块在开场过程中同步缩小、位移并归位到正式顶栏。其余 v0.8.0 功能与既有数据结构保持不变。
+v0.8.2 在 v0.8.1a 的 START GATE、Shared Brand 动画与稳定顶栏基础上加入单用户云同步。正式运行数据仍保存在当前浏览器；Cloudflare Worker + D1 + R2 只承担跨设备同步，因此离线时 TEMPO-7 仍然可以照常运行。
 
+## v0.8.2 新增与调整
 
-
-v0.8.1a 是 v0.8.1 的显示稳定性热修复：固定顶栏品牌信息小字的单行布局，并为数字启用等宽数字特性，避免实时时钟更新时因字符宽度变化触发 ROUTINE CONTROL / 版本 / 日期时间在换行与不换行之间反复跳动。其余 v0.8.1 行为与数据结构不变。
-
+- **Personal Cloud Sync**：DATA 面板加入 CLOUD SYNC 区域，通过 `SYNC KEY` 连接固定 Worker endpoint。
+- **Local First 保持不变**：模板、TODAY、WEEK、LOOK 与铃声音频继续以当前设备的 localStorage / IndexedDB 作为运行数据源。
+- **完整配置同步**：同步模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY Override、外观与铃声设置。
+- **AUDIO 云同步**：所有 TYPE 的 ENTRY / EXIT MP3 / WAV 同步到 R2，新设备拉取后仍存入本机 IndexedDB。
+- **Revision 冲突保护**：D1 中维护单调递增 revision；旧设备不能静默覆盖更新版本。
+- **显式冲突选择**：检测到 CLOUD 与 THIS DEVICE 都有改动时显示 `USE CLOUD` / `USE THIS DEVICE`。
+- **自动同步**：本地保存后短暂 debounce 自动同步；启动、回到前台、重新联网时检查云端；也可使用 `SYNC NOW`。
+- **离线容错**：网络或 Worker 暂时不可用时只显示 OFFLINE / ERROR，不影响本机倒计时和铃声。
+- **FULL BACKUP 保留**：schema v6 不变，继续提供独立于云同步的完整离线备份。
+- **凭据隔离**：SYNC KEY 不写入项目源码，也不进入 FULL BACKUP。
 
 ## v0.8.1a 修复内容
 
@@ -203,6 +211,34 @@ v0.8.1a 是 v0.8.1 的显示稳定性热修复：固定顶栏品牌信息小字�
 
 旧版本 JSON 仍可导入。若检测到旧备份没有 `media.audioAssets`，TEMPO-7 只恢复其中存在的配置数据，并保留目标浏览器当前已有的铃声音频。
 
+## Personal Cloud Sync（v0.8.2）
+
+`DATA` 面板新增 Personal Cloud Sync。TEMPO-7 仍保持 Local First：日常运行继续直接读取当前设备的 `localStorage` 与 `IndexedDB`；云端只作为跨设备同步副本，因此 Worker / 网络临时不可用时不会影响倒计时、模板或本地铃声播放。
+
+当前云端结构：
+
+```text
+GitHub Pages / PWA
+        │
+        │ HTTPS + Bearer SYNC_KEY
+        ▼
+Cloudflare Worker
+        │
+        ├── D1  // config snapshot + revision + audio manifest
+        └── R2  // MP3 / WAV audio objects
+```
+
+- Worker endpoint：`https://tempo7.njsukleo.workers.dev`。
+- `SYNC_KEY` 由使用者在新设备首次连接时输入；它保存在该浏览器的本地连接设置中，不写入项目源码，也不会进入 FULL BACKUP。
+- 配置同步包含模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、LOOK 与铃声设置。
+- AUDIO 同步覆盖所有任务 TYPE 的 ENTRY / EXIT MP3 / WAV；文件仍会落回本机 IndexedDB，因此离线时照常播放。
+- 云端使用单调递增 `revision` 防止旧设备静默覆盖新数据；检测到双方都有改动时进入 `SYNC CONFLICT`，由使用者明确选择 `USE CLOUD` 或 `USE THIS DEVICE`。
+- 本地保存后会进行短暂 debounce 自动同步；重新打开应用、恢复前台或重新联网时也会检查云端；`SYNC NOW` 可手动立即同步。
+- 首次连接时，如果云端还是空的，会把当前设备完整上传；如果云端已经有数据，则不会猜测，而是要求选择 CLOUD 或 THIS DEVICE。
+- `DISCONNECT` 只停止这台设备的同步并清除本机保存的 SYNC KEY，不删除 D1 / R2 中的云端数据。
+
+FULL BACKUP 与 Cloud Sync 互相独立：前者仍是可离线保存的单文件完整备份，后者负责日常多设备同步。
+
 ## 本地测试
 
 在项目目录运行：
@@ -225,7 +261,7 @@ http://localhost:8000
 
 ```powershell
 git add .
-git commit -m "TEMPO-7 v0.8.1a"
+git commit -m "TEMPO-7 v0.8.2"
 git push
 ```
 
@@ -241,6 +277,9 @@ GitHub Pages 会随 `main` 分支更新。
 - 外观与铃声设置：`localStorage`
 - MP3 / WAV 音频本体：`IndexedDB`
 - FULL BACKUP：把上述可迁移用户数据与 IndexedDB 音频共同封装到单个 JSON（schema v6）
+- Personal Cloud Sync 连接状态 / device ID / last revision / SYNC KEY：单独保存在当前浏览器 `localStorage`，不会进入 FULL BACKUP
+- 云端配置 snapshot / revision / AUDIO manifest：Cloudflare D1
+- 云端 MP3 / WAV 本体：Cloudflare R2
 - 不迁移：当前运行会话、浏览器音频授权状态、当天已触发铃声日志
 
 同一设备、同一浏览器、同一网站来源会继续读取这些本地数据。`localhost:8000` 与 GitHub Pages 属于不同来源，因此二者的浏览器本地数据互不自动共享；v0.7.0 FULL BACKUP 可以用于二者之间迁移。
@@ -260,9 +299,20 @@ TEMPO-7 v0.7.0 起不再依赖 Windows 本机 Bahnschrift。字体优先从项�
 
 ## 后续前瞻
 
-后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在保持 Local First 前提下的 Personal Cloud Sync。
+后续版本可继续讨论更复杂的 `STATE TRANSITION` 过渡动画，以及在云同步基础上的进一步多设备体验优化。
 
 ## 版本记录
+
+### v0.8.2 — Personal Cloud Sync
+- 新增单用户 Personal Cloud Sync：通过 Cloudflare Worker + D1 + R2 在多设备之间同步 TEMPO-7。
+- DATA 面板加入 CONNECT / SYNC NOW / DISCONNECT、revision、last sync、设备状态与同步状态显示。
+- 配置 snapshot 覆盖模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、LOOK 与铃声设置，同时继续保持 Local First。
+- 所有 TYPE 的 ENTRY / EXIT MP3 / WAV 纳入云同步；R2 保存二进制音频，本机继续使用 IndexedDB 播放。
+- 加入 SHA-256 AUDIO 完整性校验与内容去重，未变化的铃声不会重复上传。
+- 加入 revision 冲突保护；当 CLOUD 与 THIS DEVICE 都有改动时要求手动选择保留来源，避免静默覆盖。
+- 本地保存后 debounce 自动同步，并在启动、恢复前台及重新联网时检查云端；断网不影响本机运行。
+- FULL BACKUP schema v6 保持不变，并继续作为独立于云同步的完整离线备份机制。
+- Service Worker 与静态资源版本升级至 `0.8.2`。
 
 ### v0.8.1a — Microline Stability Hotfix
 - 修复顶栏 `ROUTINE CONTROL / V0.8.1a / 日期时间` 因实时时钟字符宽度变化而周期性换行的问题。

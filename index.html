@@ -15,7 +15,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.8.1a" />
+  <link rel="stylesheet" href="style.css?v=0.8.2" />
 </head>
 <body class="launch-active">
   <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
@@ -32,7 +32,7 @@
     <div id="brandDock" class="brand-dock">
       <div id="sharedBrandBlock" class="brand-wrap shared-brand-block">
         <div class="brand">TEMPO-7</div>
-        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.1a</span><span id="systemDate">----</span></div>
+        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.2</span><span id="systemDate">----</span></div>
       </div>
     </div>
 
@@ -250,13 +250,13 @@
     <form method="dialog" class="modal-frame">
       <div class="modal-titlebar">
         <div>
-          <div class="eyebrow">LOCAL DATA</div>
-          <h2>备份与恢复</h2>
+          <div class="eyebrow">DATA CONTROL</div>
+          <h2>备份与同步</h2>
         </div>
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。v0.7.3 的 FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件，便于换设备或换浏览器后一键恢复。由于音频以 Base64 写入 JSON，备份文件会比原始音频略大。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件。Personal Cloud Sync 则负责在多设备之间自动同步这些数据。</p>
       <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后请重新经过启动页点击，或使用顶栏 AUDIO 手动恢复声音。</p>
 
       <div class="data-actions">
@@ -264,6 +264,62 @@
         <label class="btn file-btn">IMPORT BACKUP<input id="importJsonInput" type="file" accept="application/json,.json" /></label>
       </div>
       <div id="dataMessage" class="message-box" hidden></div>
+
+      <section class="cloud-sync-panel" aria-labelledby="cloudSyncTitle">
+        <div class="cloud-sync-head">
+          <div>
+            <div class="eyebrow">PERSONAL CLOUD SYNC</div>
+            <h3 id="cloudSyncTitle">跨设备同步</h3>
+          </div>
+          <strong id="cloudStatusLabel" class="cloud-status" data-status="DISCONNECTED">DISCONNECTED</strong>
+        </div>
+
+        <p class="editor-hint">Local First：TEMPO-7 仍以本机 localStorage / IndexedDB 运行；Cloudflare 只负责在设备之间同步配置与所有 ENTRY / EXIT MP3 / WAV。断网不会阻止日程和铃声继续工作。</p>
+
+        <div class="cloud-endpoint-row">
+          <span>ENDPOINT</span>
+          <code id="cloudEndpointLabel">https://tempo7.njsukleo.workers.dev</code>
+        </div>
+
+        <div id="cloudConnectView" class="cloud-connect-view">
+          <label class="field">
+            <span>SYNC KEY</span>
+            <input id="cloudSyncKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Cloudflare Worker Secret" />
+          </label>
+          <div class="cloud-actions">
+            <button type="button" id="cloudConnectBtn" class="btn btn-primary">CONNECT</button>
+          </div>
+        </div>
+
+        <div id="cloudConnectedView" class="cloud-connected-view" hidden>
+          <div class="cloud-meta-grid">
+            <div class="cloud-meta-cell"><span>REVISION</span><strong id="cloudRevisionLabel">—</strong></div>
+            <div class="cloud-meta-cell"><span>LAST SYNC</span><strong id="cloudLastSyncLabel">—</strong></div>
+            <div class="cloud-meta-cell"><span>DEVICE</span><strong id="cloudDeviceLabel">—</strong></div>
+          </div>
+          <div class="cloud-actions">
+            <button type="button" id="cloudSyncNowBtn" class="btn btn-primary">SYNC NOW</button>
+            <button type="button" id="cloudDisconnectBtn" class="btn btn-danger-outline">DISCONNECT</button>
+          </div>
+        </div>
+
+        <div id="cloudConflictPanel" class="cloud-conflict-panel" hidden>
+          <div class="eyebrow">SYNC CONFLICT</div>
+          <strong id="cloudConflictTitle">云端与本机都有改动</strong>
+          <p id="cloudConflictCopy">请选择保留哪一份。选择会覆盖另一端的配置与 AUDIO。</p>
+          <div class="cloud-conflict-meta">
+            <span id="cloudConflictCloudMeta">CLOUD —</span>
+            <span id="cloudConflictLocalMeta">THIS DEVICE —</span>
+          </div>
+          <div class="cloud-actions">
+            <button type="button" id="cloudUseCloudBtn" class="btn">USE CLOUD</button>
+            <button type="button" id="cloudUseDeviceBtn" class="btn btn-primary">USE THIS DEVICE</button>
+          </div>
+        </div>
+
+        <div id="cloudStatusDetail" class="cloud-status-detail">未连接。</div>
+        <div id="cloudMessage" class="message-box" hidden></div>
+      </section>
     </form>
   </dialog>
 
@@ -433,6 +489,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.8.1a"></script>
+  <script src="app.js?v=0.8.2"></script>
 </body>
 </html>

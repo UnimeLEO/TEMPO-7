@@ -1,14 +1,15 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.1a';
+  const APP_VERSION = '0.8.2';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
     runState: 'tempo7.runState',
     soundTriggerLog: 'tempo7.soundTriggerLog',
     dailyOverrides: 'tempo7.dailyOverrides',
-    customTypes: 'tempo7.customTypes'
+    customTypes: 'tempo7.customTypes',
+    cloud: 'tempo7.cloud'
   };
 
   const MEDIA_DB = {
@@ -170,7 +171,14 @@
     todayTemplateNameInput: $('todayTemplateNameInput'), saveTodayAsTemplateBtn: $('saveTodayAsTemplateBtn'),
     saveTodayApplyBtn: $('saveTodayApplyBtn'), saveTodayWeekBtn: $('saveTodayWeekBtn'), saveTodayWeekWrap: $('saveTodayWeekWrap'),
     weekPlanEnabledInput: $('weekPlanEnabledInput'), weekPlanRows: $('weekPlanRows'), weekPlanMessage: $('weekPlanMessage'), saveWeekPlanBtn: $('saveWeekPlanBtn'),
-    typeDialog: $('typeDialog'), customTypeRows: $('customTypeRows'), customTypeCount: $('customTypeCount'), typeAddBtn: $('typeAddBtn'), saveTypesBtn: $('saveTypesBtn'), typeError: $('typeError')
+    typeDialog: $('typeDialog'), customTypeRows: $('customTypeRows'), customTypeCount: $('customTypeCount'), typeAddBtn: $('typeAddBtn'), saveTypesBtn: $('saveTypesBtn'), typeError: $('typeError'),
+    cloudStatusLabel: $('cloudStatusLabel'), cloudEndpointLabel: $('cloudEndpointLabel'), cloudConnectView: $('cloudConnectView'),
+    cloudConnectedView: $('cloudConnectedView'), cloudSyncKeyInput: $('cloudSyncKeyInput'), cloudConnectBtn: $('cloudConnectBtn'),
+    cloudRevisionLabel: $('cloudRevisionLabel'), cloudLastSyncLabel: $('cloudLastSyncLabel'), cloudDeviceLabel: $('cloudDeviceLabel'),
+    cloudSyncNowBtn: $('cloudSyncNowBtn'), cloudDisconnectBtn: $('cloudDisconnectBtn'), cloudConflictPanel: $('cloudConflictPanel'),
+    cloudConflictTitle: $('cloudConflictTitle'), cloudConflictCopy: $('cloudConflictCopy'), cloudConflictCloudMeta: $('cloudConflictCloudMeta'),
+    cloudConflictLocalMeta: $('cloudConflictLocalMeta'), cloudUseCloudBtn: $('cloudUseCloudBtn'), cloudUseDeviceBtn: $('cloudUseDeviceBtn'),
+    cloudStatusDetail: $('cloudStatusDetail'), cloudMessage: $('cloudMessage')
   };
 
   let customTypes = loadCustomTypes();
@@ -213,6 +221,697 @@
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  // v0.8.2 — Personal Cloud Sync
+  // Local storage remains authoritative for runtime. The Worker only carries a
+  // versioned cross-device snapshot and R2 copies of bell audio assets.
+  const CLOUD_ENDPOINT = 'https://tempo7.njsukleo.workers.dev';
+  const CLOUD_SCHEMA_VERSION = 1;
+  const CLOUD_DEBOUNCE_MS = 3000;
+  const CLOUD_REQUEST_TIMEOUT_MS = 25000;
+
+  let cloudSyncTimerId = null;
+  let cloudSyncPromise = null;
+  let cloudUiStatus = 'DISCONNECTED';
+  let cloudUiDetail = '未连接。';
+  let cloudSuppressDirty = false;
+  let cloudMutationSeq = 0;
+  let pendingCloudSnapshot = null;
+
+  class CloudApiError extends Error {
+    constructor(message, status = 0, body = null) {
+      super(message);
+      this.name = 'CloudApiError';
+      this.status = status;
+      this.body = body;
+    }
+  }
+
+  function makeCloudDeviceId() {
+    if (window.crypto?.randomUUID) return `device-${crypto.randomUUID()}`;
+    return `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function loadCloudState() {
+    let raw = {};
+    try { raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.cloud)) || {}; } catch (_) {}
+    return {
+      workerUrl: CLOUD_ENDPOINT,
+      connected: raw.connected === true && typeof raw.syncKey === 'string' && raw.syncKey.length > 0,
+      syncKey: typeof raw.syncKey === 'string' ? raw.syncKey : '',
+      deviceId: typeof raw.deviceId === 'string' && raw.deviceId ? raw.deviceId : makeCloudDeviceId(),
+      lastSyncedRevision: Number.isInteger(raw.lastSyncedRevision) && raw.lastSyncedRevision >= 0 ? raw.lastSyncedRevision : null,
+      lastSyncedConfigHash: typeof raw.lastSyncedConfigHash === 'string' ? raw.lastSyncedConfigHash : null,
+      lastSyncAt: typeof raw.lastSyncAt === 'string' ? raw.lastSyncAt : null,
+      localDirty: raw.localDirty === true,
+      localModifiedAt: typeof raw.localModifiedAt === 'string' ? raw.localModifiedAt : null,
+      conflict: raw.conflict === true,
+      conflictCloudRevision: Number.isInteger(raw.conflictCloudRevision) ? raw.conflictCloudRevision : null,
+      conflictCloudUpdatedAt: typeof raw.conflictCloudUpdatedAt === 'string' ? raw.conflictCloudUpdatedAt : null
+    };
+  }
+
+  let cloudState = loadCloudState();
+
+  function saveCloudState() {
+    localStorage.setItem(STORAGE_KEYS.cloud, JSON.stringify(cloudState));
+  }
+
+  function setCloudStatus(status, detail = '') {
+    cloudUiStatus = status;
+    cloudUiDetail = detail || status;
+    renderCloudUi();
+  }
+
+  function showCloudMessage(message, success = false) {
+    if (!els.cloudMessage) return;
+    els.cloudMessage.textContent = message;
+    els.cloudMessage.hidden = !message;
+    els.cloudMessage.classList.toggle('success', !!success);
+  }
+
+  function hideCloudMessage() {
+    if (els.cloudMessage) els.cloudMessage.hidden = true;
+  }
+
+  function formatCloudDateTime(iso) {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  }
+
+  function renderCloudUi() {
+    if (!els.cloudStatusLabel) return;
+    const connected = cloudState.connected && !!cloudState.syncKey;
+    let status = cloudUiStatus;
+    if (!connected && !['CONNECTING', 'ERROR', 'OFFLINE'].includes(status)) status = 'DISCONNECTED';
+    else if (connected && cloudState.conflict) status = 'CONFLICT';
+    else if (status === 'DISCONNECTED') status = cloudState.localDirty ? 'LOCAL CHANGES' : 'CONNECTED';
+
+    els.cloudStatusLabel.textContent = status;
+    els.cloudStatusLabel.dataset.status = status;
+    els.cloudEndpointLabel.textContent = CLOUD_ENDPOINT;
+    els.cloudConnectView.hidden = connected;
+    els.cloudConnectedView.hidden = !connected;
+    els.cloudRevisionLabel.textContent = cloudState.lastSyncedRevision ?? '—';
+    els.cloudLastSyncLabel.textContent = formatCloudDateTime(cloudState.lastSyncAt);
+    els.cloudDeviceLabel.textContent = cloudState.deviceId.replace(/^device-/, '').slice(0, 18) || '—';
+    els.cloudStatusDetail.textContent = cloudUiDetail || (connected ? '已连接。' : '未连接。');
+
+    const conflict = connected && cloudState.conflict;
+    els.cloudConflictPanel.hidden = !conflict;
+    if (conflict) {
+      els.cloudConflictCloudMeta.textContent = `CLOUD // REV ${cloudState.conflictCloudRevision ?? '—'} // ${formatCloudDateTime(cloudState.conflictCloudUpdatedAt)}`;
+      els.cloudConflictLocalMeta.textContent = `THIS DEVICE // ${cloudState.localDirty ? 'LOCAL CHANGES' : 'LOCAL COPY'} // ${formatCloudDateTime(cloudState.localModifiedAt)}`;
+    }
+
+    const busy = status === 'SYNCING' || status === 'CONNECTING';
+    els.cloudSyncNowBtn.disabled = busy || conflict;
+    els.cloudDisconnectBtn.disabled = busy;
+    els.cloudUseCloudBtn.disabled = busy;
+    els.cloudUseDeviceBtn.disabled = busy;
+    els.cloudConnectBtn.disabled = busy;
+  }
+
+  function markCloudDirty() {
+    if (cloudSuppressDirty) return;
+    cloudMutationSeq += 1;
+    cloudState.localDirty = true;
+    cloudState.localModifiedAt = new Date().toISOString();
+    saveCloudState();
+    if (cloudState.connected) {
+      setCloudStatus('LOCAL CHANGES', '本机有尚未同步的改动。');
+      scheduleCloudSync();
+    }
+  }
+
+  function scheduleCloudSync(delay = CLOUD_DEBOUNCE_MS) {
+    if (!cloudState.connected || !cloudState.syncKey || cloudState.conflict) return;
+    if (cloudSyncTimerId !== null) clearTimeout(cloudSyncTimerId);
+    cloudSyncTimerId = window.setTimeout(() => {
+      cloudSyncTimerId = null;
+      syncCloudNow({ automatic: true }).catch(() => {});
+    }, delay);
+  }
+
+  function inferAudioContentType(record) {
+    const declared = String(record?.type || record?.blob?.type || '').toLowerCase();
+    if (declared.startsWith('audio/')) return declared.split(';')[0];
+    const name = String(record?.name || '').toLowerCase();
+    if (name.endsWith('.wav') || name.endsWith('.wave')) return 'audio/wav';
+    if (name.endsWith('.mp3')) return 'audio/mpeg';
+    return 'audio/octet-stream';
+  }
+
+  async function sha256HexFromBuffer(buffer) {
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function sha256HexFromBlob(blob) {
+    return sha256HexFromBuffer(await blob.arrayBuffer());
+  }
+
+  async function sha256HexFromText(text) {
+    return sha256HexFromBuffer(new TextEncoder().encode(text));
+  }
+
+  function createCloudConfig() {
+    return {
+      app: 'TEMPO-7',
+      format: 1,
+      dataSchemaVersion: 6,
+      appVersion: APP_VERSION,
+      templates: deepClone(templates),
+      customTypes: deepClone(customTypes),
+      settings: deepClone(settings),
+      dailyOverrides: deepClone(dailyOverrides)
+    };
+  }
+
+  async function getCurrentCloudConfigHash() {
+    return sha256HexFromText(JSON.stringify(createCloudConfig()));
+  }
+
+  function isEmptyCloudSnapshot(snapshot) {
+    const configEmpty = !snapshot?.config || typeof snapshot.config !== 'object' || Array.isArray(snapshot.config) || Object.keys(snapshot.config).length === 0;
+    const slots = snapshot?.audioManifest?.slots;
+    const audioEmpty = !slots || typeof slots !== 'object' || Object.keys(slots).length === 0;
+    return configEmpty && audioEmpty;
+  }
+
+  async function parseCloudErrorResponse(response) {
+    let body = null;
+    try { body = await response.json(); } catch (_) {}
+    const code = body?.error || `HTTP_${response.status}`;
+    throw new CloudApiError(code, response.status, body);
+  }
+
+  async function cloudFetch(path, options = {}, keyOverride = null) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CLOUD_REQUEST_TIMEOUT_MS);
+    const key = keyOverride ?? cloudState.syncKey;
+    const headers = new Headers(options.headers || {});
+    if (key) headers.set('Authorization', `Bearer ${key}`);
+
+    try {
+      return await fetch(`${CLOUD_ENDPOINT}${path}`, {
+        ...options,
+        headers,
+        cache: 'no-store',
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new CloudApiError('REQUEST_TIMEOUT', 0, null);
+      throw new CloudApiError('NETWORK_ERROR', 0, { message: error?.message || String(error) });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function getCloudSnapshot(keyOverride = null) {
+    const response = await cloudFetch('/sync', { method: 'GET' }, keyOverride);
+    if (!response.ok) await parseCloudErrorResponse(response);
+    return response.json();
+  }
+
+  async function putCloudConfig(baseRevision, config) {
+    const response = await cloudFetch('/sync', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision,
+        schemaVersion: CLOUD_SCHEMA_VERSION,
+        deviceId: cloudState.deviceId,
+        config
+      })
+    });
+    if (!response.ok) await parseCloudErrorResponse(response);
+    return response.json();
+  }
+
+  async function putCloudAudio(slot, record, baseRevision) {
+    const filename = record.name || `${slot}.audio`;
+    const contentType = inferAudioContentType(record);
+    const query = new URLSearchParams({
+      baseRevision: String(baseRevision),
+      deviceId: cloudState.deviceId,
+      filename
+    });
+    const response = await cloudFetch(`/audio/${encodeURIComponent(slot)}?${query}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: record.blob
+    });
+    if (!response.ok) await parseCloudErrorResponse(response);
+    return response.json();
+  }
+
+  async function deleteCloudAudio(slot, baseRevision) {
+    const query = new URLSearchParams({
+      baseRevision: String(baseRevision),
+      deviceId: cloudState.deviceId
+    });
+    const response = await cloudFetch(`/audio/${encodeURIComponent(slot)}?${query}`, { method: 'DELETE' });
+    if (!response.ok) await parseCloudErrorResponse(response);
+    return response.json();
+  }
+
+  async function downloadCloudAudio(slot, entry) {
+    const response = await cloudFetch(`/audio/${encodeURIComponent(slot)}`, { method: 'GET' });
+    if (!response.ok) await parseCloudErrorResponse(response);
+    const blob = await response.blob();
+    if (Number.isFinite(Number(entry.size)) && blob.size !== Number(entry.size)) {
+      throw new Error(`AUDIO ${slot} 大小校验失败。`);
+    }
+    const hash = await sha256HexFromBlob(blob);
+    if (entry.sha256 && hash !== entry.sha256) {
+      throw new Error(`AUDIO ${slot} SHA-256 校验失败。`);
+    }
+    await putAudioAssetRecord({
+      id: slot,
+      blob,
+      name: entry.fileName || `${slot}.audio`,
+      type: entry.contentType || blob.type || '',
+      updatedAt: entry.updatedAt || new Date().toISOString()
+    }, { suppressCloudSync: true });
+  }
+
+  function sameAudioSyncMetadata(localRecord, remoteEntry) {
+    return Boolean(
+      localRecord && remoteEntry &&
+      localRecord.sha256 === remoteEntry.sha256 &&
+      Number(localRecord.size) === Number(remoteEntry.size) &&
+      localRecord.contentType === remoteEntry.contentType &&
+      localRecord.fileName === remoteEntry.fileName
+    );
+  }
+
+  async function getAllAudioAssetRecords() {
+    const db = await openMediaDb();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(MEDIA_DB.store, 'readonly');
+        const req = tx.objectStore(MEDIA_DB.store).getAll();
+        req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+        req.onerror = () => reject(req.error || new Error('读取音频列表失败。'));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function collectLocalAudioSyncRecords() {
+    const allowed = new Set(getAllSoundAssetIds());
+    const records = await getAllAudioAssetRecords();
+    const map = new Map();
+    for (const record of records) {
+      if (!allowed.has(record.id) || !record.blob) continue;
+      const contentType = inferAudioContentType(record);
+      map.set(record.id, {
+        id: record.id,
+        blob: record.blob,
+        name: record.name || `${record.id}.audio`,
+        fileName: record.name || `${record.id}.audio`,
+        contentType,
+        size: record.blob.size,
+        sha256: await sha256HexFromBlob(record.blob),
+        updatedAt: record.updatedAt || null
+      });
+    }
+    return map;
+  }
+
+  async function applyCloudConfig(rawConfig) {
+    if (!rawConfig || rawConfig.app !== 'TEMPO-7' || !Array.isArray(rawConfig.templates) || !rawConfig.templates.length) {
+      throw new Error('云端配置不是有效的 TEMPO-7 数据。');
+    }
+    const remoteDataSchema = Number(rawConfig.dataSchemaVersion || 1);
+    if (!Number.isFinite(remoteDataSchema) || remoteDataSchema > 6) {
+      throw new Error(`云端数据 schema v${rawConfig.dataSchemaVersion} 高于当前 TEMPO-7 可读取版本。`);
+    }
+
+    const importedCustomTypes = normalizeCustomTypes(rawConfig.customTypes || []);
+    const importedTemplates = rawConfig.templates.map(template => ({
+      id: template.id || makeId('template'),
+      name: template.name || '未命名模板',
+      tasks: normalizeTasks(template.tasks, importedCustomTypes)
+    }));
+    for (const template of importedTemplates) {
+      const error = validateTasks(template.tasks);
+      if (error) throw new Error(`云端模板“${template.name}”无效：${error}`);
+    }
+
+    customTypes = importedCustomTypes;
+    templates = importedTemplates;
+    dailyOverrides = normalizeImportedOverrides(rawConfig.dailyOverrides, importedTemplates, importedCustomTypes);
+
+    const requestedId = rawConfig.settings?.activeTemplateId;
+    const importedActiveId = templates.some(template => template.id === requestedId) ? requestedId : templates[0].id;
+    const importedVolume = Number(rawConfig.settings?.sound?.volume);
+    settings = {
+      activeTemplateId: importedActiveId,
+      weekPlan: normalizeWeekPlan(rawConfig.settings?.weekPlan, importedActiveId),
+      appearance: normalizeAppearance(rawConfig.settings?.appearance),
+      sound: {
+        enabled: rawConfig.settings?.sound?.enabled !== false,
+        volume: Number.isFinite(importedVolume) ? Math.min(1, Math.max(0, importedVolume)) : 0.8,
+        bindings: buildSoundBindings(importedCustomTypes)
+      }
+    };
+
+    cloudSuppressDirty = true;
+    try {
+      saveAll();
+      saveDailyOverrides();
+    } finally {
+      cloudSuppressDirty = false;
+    }
+
+    const effective = getActiveTemplate();
+    editorTemplateId = effective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : effective.id;
+    lastTemplateUiKey = null;
+    lastStateKey = null;
+    lastRuntimeRenderKey = null;
+    scheduleCruise.renderKey = null;
+    refreshTemplateSelects();
+    applyAppearance(settings.appearance);
+    resetSoundEventCursor();
+    render();
+  }
+
+  async function pullAudioFromCloud(manifest) {
+    const remoteSlots = manifest?.slots && typeof manifest.slots === 'object' ? manifest.slots : {};
+    const allowedIds = new Set(getAllSoundAssetIds());
+    const existingRecords = await getAllAudioAssetRecords();
+    const existingMap = new Map(existingRecords.map(record => [record.id, record]));
+    const allowedList = [...allowedIds];
+    let done = 0;
+
+    // Remove assets that are no longer valid for the cloud configuration.
+    for (const record of existingRecords) {
+      if (!allowedIds.has(record.id)) {
+        await deleteAudioAsset(record.id, { suppressCloudSync: true });
+      }
+    }
+
+    for (const slot of allowedList) {
+      done += 1;
+      setCloudStatus('SYNCING', `AUDIO ${done} / ${allowedList.length}`);
+      const remote = remoteSlots[slot] || null;
+      const local = existingMap.get(slot) || null;
+
+      if (!remote) {
+        if (local) await deleteAudioAsset(slot, { suppressCloudSync: true });
+        continue;
+      }
+
+      if (local?.blob) {
+        const localHash = await sha256HexFromBlob(local.blob);
+        const localType = inferAudioContentType(local);
+        const localName = local.name || `${slot}.audio`;
+        if (localHash === remote.sha256 && local.blob.size === Number(remote.size)) {
+          if (localType !== remote.contentType || localName !== remote.fileName) {
+            await putAudioAssetRecord({
+              id: slot,
+              blob: local.blob,
+              name: remote.fileName || localName,
+              type: remote.contentType || localType,
+              updatedAt: remote.updatedAt || local.updatedAt
+            }, { suppressCloudSync: true });
+          }
+          continue;
+        }
+      }
+
+      await downloadCloudAudio(slot, remote);
+    }
+    soundRuntime.buffers.clear();
+    await refreshSoundUi();
+  }
+
+  function rememberCloudSynced(snapshot, configHash) {
+    cloudState.lastSyncedRevision = snapshot.revision;
+    cloudState.lastSyncedConfigHash = configHash;
+    cloudState.lastSyncAt = new Date().toISOString();
+    cloudState.conflict = false;
+    cloudState.conflictCloudRevision = null;
+    cloudState.conflictCloudUpdatedAt = null;
+    if (!cloudState.localDirty) cloudState.localModifiedAt = null;
+    saveCloudState();
+    pendingCloudSnapshot = null;
+  }
+
+  async function pullCloudSnapshot(snapshot) {
+    const mutationAtStart = cloudMutationSeq;
+    setCloudStatus('SYNCING', '正在应用云端配置…');
+    await applyCloudConfig(snapshot.config);
+    await pullAudioFromCloud(snapshot.audioManifest);
+    const configHash = await getCurrentCloudConfigHash();
+    const unchangedDuringSync = mutationAtStart === cloudMutationSeq;
+    cloudState.localDirty = !unchangedDuringSync;
+    rememberCloudSynced(snapshot, configHash);
+    if (!unchangedDuringSync) {
+      cloudState.localDirty = true;
+      cloudState.localModifiedAt ||= new Date().toISOString();
+      saveCloudState();
+      setCloudStatus('LOCAL CHANGES', '拉取过程中又产生了本机改动，将再次同步。');
+      scheduleCloudSync(800);
+    } else {
+      setCloudStatus('UP TO DATE', `已同步 revision ${snapshot.revision}。`);
+      showCloudMessage('已使用 CLOUD 数据更新本机配置与 AUDIO。', true);
+    }
+  }
+
+  async function pushLocalSnapshot(snapshot) {
+    const mutationAtStart = cloudMutationSeq;
+    const localConfig = createCloudConfig();
+    const localConfigHash = await sha256HexFromText(JSON.stringify(localConfig));
+    let currentRevision = snapshot.revision;
+    let remoteManifest = structuredClone(snapshot.audioManifest || { slots: {} });
+    if (!remoteManifest.slots || typeof remoteManifest.slots !== 'object') remoteManifest.slots = {};
+
+    setCloudStatus('SYNCING', '正在上传配置…');
+    const configResult = await putCloudConfig(currentRevision, localConfig);
+    currentRevision = configResult.revision;
+
+    const localAudio = await collectLocalAudioSyncRecords();
+    const remoteSlotNames = Object.keys(remoteManifest.slots);
+    const deleteSlots = remoteSlotNames.filter(slot => !localAudio.has(slot));
+    const uploadSlots = [...localAudio.keys()].filter(slot => !sameAudioSyncMetadata(localAudio.get(slot), remoteManifest.slots[slot]));
+    const totalOps = deleteSlots.length + uploadSlots.length;
+    let opIndex = 0;
+
+    for (const slot of deleteSlots) {
+      opIndex += 1;
+      setCloudStatus('SYNCING', `AUDIO ${opIndex} / ${totalOps}`);
+      const result = await deleteCloudAudio(slot, currentRevision);
+      currentRevision = result.revision;
+      delete remoteManifest.slots[slot];
+    }
+
+    for (const slot of uploadSlots) {
+      opIndex += 1;
+      setCloudStatus('SYNCING', `AUDIO ${opIndex} / ${totalOps}`);
+      const record = localAudio.get(slot);
+      const result = await putCloudAudio(slot, record, currentRevision);
+      currentRevision = result.revision;
+      remoteManifest.slots[slot] = result.audio;
+    }
+
+    const latest = await getCloudSnapshot();
+    const unchangedDuringSync = mutationAtStart === cloudMutationSeq;
+    cloudState.localDirty = !unchangedDuringSync;
+    rememberCloudSynced(latest, localConfigHash);
+    if (!unchangedDuringSync) {
+      cloudState.localDirty = true;
+      saveCloudState();
+      setCloudStatus('LOCAL CHANGES', '同步过程中又产生了本机改动，将再次同步。');
+      scheduleCloudSync(800);
+    } else {
+      setCloudStatus('UP TO DATE', `已同步 revision ${latest.revision}。`);
+      showCloudMessage('本机配置与 AUDIO 已同步到 CLOUD。', true);
+    }
+  }
+
+  function showCloudConflict(snapshot, title = '云端与本机都有改动') {
+    pendingCloudSnapshot = snapshot;
+    cloudState.conflict = true;
+    cloudState.conflictCloudRevision = snapshot?.revision ?? null;
+    cloudState.conflictCloudUpdatedAt = snapshot?.updatedAt ?? null;
+    saveCloudState();
+    if (els.cloudConflictTitle) els.cloudConflictTitle.textContent = title;
+    if (els.cloudConflictCopy) {
+      els.cloudConflictCopy.textContent = '请选择保留哪一份。USE CLOUD 会覆盖本机配置与 AUDIO；USE THIS DEVICE 会以本机数据覆盖云端。';
+    }
+    setCloudStatus('CONFLICT', '需要手动选择 CLOUD 或 THIS DEVICE。');
+  }
+
+  async function handleCloudSyncFailure(error) {
+    if (error instanceof CloudApiError && error.status === 409 && error.body?.error === 'REVISION_CONFLICT') {
+      try {
+        const latest = await getCloudSnapshot();
+        showCloudConflict(latest);
+      } catch (_) {
+        setCloudStatus('ERROR', '发生 revision 冲突，但无法重新读取云端状态。');
+      }
+      return;
+    }
+    if (error instanceof CloudApiError && error.status === 401) {
+      setCloudStatus('ERROR', 'SYNC KEY 无效或已更改。');
+      showCloudMessage('Worker 拒绝了当前 SYNC KEY。请 DISCONNECT 后重新连接。', false);
+      return;
+    }
+    if (!navigator.onLine || (error instanceof CloudApiError && error.message === 'NETWORK_ERROR')) {
+      setCloudStatus('OFFLINE', '网络不可用；本机功能不受影响，联网后会再次同步。');
+      return;
+    }
+    setCloudStatus('ERROR', error?.message || '云同步失败。');
+    showCloudMessage(error?.message || '云同步失败。', false);
+  }
+
+  async function reconcileCloudSnapshot(snapshot, { initial = false } = {}) {
+    const currentHash = await getCurrentCloudConfigHash();
+    if (cloudState.lastSyncedConfigHash && currentHash !== cloudState.lastSyncedConfigHash) {
+      cloudState.localDirty = true;
+      cloudState.localModifiedAt ||= new Date().toISOString();
+      saveCloudState();
+    }
+
+    if (cloudState.lastSyncedRevision === null) {
+      if (isEmptyCloudSnapshot(snapshot)) {
+        await pushLocalSnapshot(snapshot);
+      } else {
+        showCloudConflict(snapshot, initial ? 'CLOUD 已有数据' : '需要选择初始数据来源');
+      }
+      return;
+    }
+
+    if (snapshot.revision === cloudState.lastSyncedRevision) {
+      if (cloudState.localDirty) await pushLocalSnapshot(snapshot);
+      else {
+        cloudState.lastSyncAt = new Date().toISOString();
+        saveCloudState();
+        setCloudStatus('UP TO DATE', `Cloud revision ${snapshot.revision} 与本机一致。`);
+      }
+      return;
+    }
+
+    if (snapshot.revision > cloudState.lastSyncedRevision) {
+      if (cloudState.localDirty) showCloudConflict(snapshot);
+      else await pullCloudSnapshot(snapshot);
+      return;
+    }
+
+    // A lower cloud revision indicates a backend reset or replacement. Never guess.
+    showCloudConflict(snapshot, 'CLOUD revision 低于本机记录');
+  }
+
+  async function syncCloudNow({ automatic = false } = {}) {
+    if (!cloudState.connected || !cloudState.syncKey) return null;
+    if (cloudState.conflict) {
+      renderCloudUi();
+      return null;
+    }
+    if (!navigator.onLine) {
+      setCloudStatus('OFFLINE', '当前离线；本机继续正常运行。');
+      return null;
+    }
+    if (cloudSyncPromise) return cloudSyncPromise;
+
+    cloudSyncPromise = (async () => {
+      hideCloudMessage();
+      setCloudStatus('SYNCING', automatic ? '正在自动检查 CLOUD…' : '正在检查 CLOUD…');
+      try {
+        const snapshot = await getCloudSnapshot();
+        await reconcileCloudSnapshot(snapshot);
+      } catch (error) {
+        await handleCloudSyncFailure(error);
+        if (!automatic) console.warn('TEMPO-7 cloud sync failed:', error);
+      } finally {
+        cloudSyncPromise = null;
+        renderCloudUi();
+      }
+    })();
+
+    return cloudSyncPromise;
+  }
+
+  async function connectCloud() {
+    const key = String(els.cloudSyncKeyInput?.value || '').trim();
+    if (!key) {
+      showCloudMessage('请输入 SYNC KEY。', false);
+      return;
+    }
+    if (!navigator.onLine) {
+      setCloudStatus('OFFLINE', '当前离线，无法首次连接。');
+      return;
+    }
+
+    hideCloudMessage();
+    setCloudStatus('CONNECTING', '正在验证 Worker 与 SYNC KEY…');
+    els.cloudConnectBtn.disabled = true;
+
+    try {
+      const snapshot = await getCloudSnapshot(key);
+      cloudState.syncKey = key;
+      cloudState.connected = true;
+      cloudState.workerUrl = CLOUD_ENDPOINT;
+      cloudState.conflict = false;
+      saveCloudState();
+      els.cloudSyncKeyInput.value = '';
+      await reconcileCloudSnapshot(snapshot, { initial: true });
+      if (!cloudState.conflict) showCloudMessage('CLOUD SYNC 已连接。', true);
+    } catch (error) {
+      cloudState.connected = false;
+      cloudState.syncKey = '';
+      saveCloudState();
+      await handleCloudSyncFailure(error);
+    } finally {
+      renderCloudUi();
+    }
+  }
+
+  function disconnectCloud() {
+    if (cloudSyncTimerId !== null) {
+      clearTimeout(cloudSyncTimerId);
+      cloudSyncTimerId = null;
+    }
+    cloudState.connected = false;
+    cloudState.syncKey = '';
+    cloudState.conflict = false;
+    cloudState.conflictCloudRevision = null;
+    cloudState.conflictCloudUpdatedAt = null;
+    pendingCloudSnapshot = null;
+    saveCloudState();
+    setCloudStatus('DISCONNECTED', '已断开。云端数据不会被删除，本机数据保持不变。');
+    showCloudMessage('已断开 CLOUD SYNC；SYNC KEY 已从本机连接设置中清除。', true);
+  }
+
+  async function resolveCloudConflict(useCloud) {
+    if (!cloudState.connected || !cloudState.syncKey) return;
+    hideCloudMessage();
+    setCloudStatus('SYNCING', useCloud ? '正在使用 CLOUD 覆盖本机…' : '正在使用 THIS DEVICE 覆盖 CLOUD…');
+    try {
+      const latest = await getCloudSnapshot();
+      if (useCloud) {
+        await pullCloudSnapshot(latest);
+      } else {
+        cloudState.conflict = false;
+        saveCloudState();
+        await pushLocalSnapshot(latest);
+      }
+    } catch (error) {
+      await handleCloudSyncFailure(error);
+    } finally {
+      renderCloudUi();
+    }
+  }
+
+
 
   function openMediaDb() {
     return new Promise((resolve, reject) => {
@@ -242,7 +941,7 @@
     }
   }
 
-  async function putAudioAsset(id, file) {
+  async function putAudioAsset(id, file, { suppressCloudSync = false } = {}) {
     const db = await openMediaDb();
     try {
       await new Promise((resolve, reject) => {
@@ -263,9 +962,10 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (!suppressCloudSync) markCloudDirty();
   }
 
-  async function deleteAudioAsset(id) {
+  async function deleteAudioAsset(id, { suppressCloudSync = false } = {}) {
     const db = await openMediaDb();
     try {
       await new Promise((resolve, reject) => {
@@ -278,9 +978,10 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (!suppressCloudSync) markCloudDirty();
   }
 
-  async function putAudioAssetRecord({ id, blob, name, type, updatedAt }) {
+  async function putAudioAssetRecord({ id, blob, name, type, updatedAt }, { suppressCloudSync = false } = {}) {
     const db = await openMediaDb();
     try {
       await new Promise((resolve, reject) => {
@@ -301,6 +1002,7 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (!suppressCloudSync) markCloudDirty();
   }
 
   function arrayBufferToBase64(buffer) {
@@ -830,6 +1532,7 @@
 
   function saveDailyOverrides() {
     localStorage.setItem(STORAGE_KEYS.dailyOverrides, JSON.stringify(dailyOverrides));
+    markCloudDirty();
   }
 
   function getDailyOverride(date, templateId) {
@@ -910,6 +1613,7 @@
     localStorage.setItem(STORAGE_KEYS.templates, JSON.stringify(templates));
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
     saveCustomTypes();
+    markCloudDirty();
   }
 
   function getManualActiveTemplate() {
@@ -2541,6 +3245,8 @@
     });
     els.dataBtn.addEventListener('click', () => {
       els.dataMessage.hidden = true;
+      hideCloudMessage();
+      renderCloudUi();
       els.dataDialog.showModal();
     });
     els.soundBtn.addEventListener('click', () => {
@@ -2581,6 +3287,18 @@
       const file = els.importJsonInput.files?.[0];
       if (file) importJson(file);
     });
+
+    els.cloudConnectBtn?.addEventListener('click', connectCloud);
+    els.cloudSyncKeyInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        connectCloud();
+      }
+    });
+    els.cloudSyncNowBtn?.addEventListener('click', () => syncCloudNow({ automatic: false }));
+    els.cloudDisconnectBtn?.addEventListener('click', disconnectCloud);
+    els.cloudUseCloudBtn?.addEventListener('click', () => resolveCloudConflict(true));
+    els.cloudUseDeviceBtn?.addEventListener('click', () => resolveCloudConflict(false));
 
     for (const [section, key, inputId, valueId] of APPEARANCE_FIELDS) {
       $(inputId).addEventListener('input', event => updateAppearanceDraft(section, key, event.target.value, valueId));
@@ -2659,6 +3377,7 @@
       } else {
         render();
         requestScheduleCruise();
+        if (cloudState.connected) syncCloudNow({ automatic: true }).catch(() => {});
       }
       scheduleNextRuntimeTick();
     });
@@ -2668,6 +3387,13 @@
         runState = loadRunState();
         renderRunButton();
       }
+    });
+
+    window.addEventListener('online', () => {
+      if (cloudState.connected) syncCloudNow({ automatic: true }).catch(() => {});
+    });
+    window.addEventListener('offline', () => {
+      if (cloudState.connected) setCloudStatus('OFFLINE', '当前离线；本机继续正常运行。');
     });
 
     window.addEventListener('resize', () => {
@@ -2694,6 +3420,7 @@
     refreshSoundUi();
     refreshInstallButton();
     resetSoundEventCursor();
+    renderCloudUi();
     render();
     sizeBrandDock();
     requestAnimationFrame(positionLaunchBrand);
@@ -2703,6 +3430,9 @@
     }).catch(() => {});
     scheduleNextRuntimeTick();
     requestScheduleCruise();
+    if (cloudState.connected && cloudState.syncKey) {
+      window.setTimeout(() => syncCloudNow({ automatic: true }).catch(() => {}), 900);
+    }
   }
 
   init();
