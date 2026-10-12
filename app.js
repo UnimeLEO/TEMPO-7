@@ -1,13 +1,14 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.2b';
+  const APP_VERSION = '0.8.3';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
     runState: 'tempo7.runState',
     soundTriggerLog: 'tempo7.soundTriggerLog',
     dailyOverrides: 'tempo7.dailyOverrides',
+    dailyDelays: 'tempo7.dailyDelays',
     customTypes: 'tempo7.customTypes',
     cloud: 'tempo7.cloud'
   };
@@ -164,7 +165,9 @@
     resetAppearanceBtn: $('resetAppearanceBtn'), saveAppearanceBtn: $('saveAppearanceBtn'),
     transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'), customTypeRowTemplate: $('customTypeRowTemplate'),
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
-    todayStatusLabel: $('todayStatusLabel'), todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
+    todayStatusLabel: $('todayStatusLabel'), todayDelayStatus: $('todayDelayStatus'), todayDelayHours: $('todayDelayHours'), todayDelayMinutes: $('todayDelayMinutes'),
+    applyTodayDelayBtn: $('applyTodayDelayBtn'), resetTodayDelayBtn: $('resetTodayDelayBtn'),
+    todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
     addTodayTaskBtn: $('addTodayTaskBtn'), addTodayNewTypeBtn: $('addTodayNewTypeBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
     exportTodayBtn: $('exportTodayBtn'), openTodayTemplatePanelBtn: $('openTodayTemplatePanelBtn'),
     todayTemplatePanel: $('todayTemplatePanel'), closeTodayTemplatePanelBtn: $('closeTodayTemplatePanelBtn'),
@@ -185,6 +188,7 @@
   let templates = loadTemplates();
   let settings = loadSettings();
   let dailyOverrides = loadDailyOverrides();
+  let dailyDelays = loadDailyDelays();
   let editorTemplateId = settings.activeTemplateId;
   let todayEditorContext = null;
   let appearanceDraft = null;
@@ -393,12 +397,13 @@
     return {
       app: 'TEMPO-7',
       format: 1,
-      dataSchemaVersion: 6,
+      dataSchemaVersion: 7,
       appVersion: APP_VERSION,
       templates: deepClone(templates),
       customTypes: deepClone(customTypes),
       settings: deepClone(settings),
-      dailyOverrides: deepClone(dailyOverrides)
+      dailyOverrides: deepClone(dailyOverrides),
+      dailyDelays: deepClone(dailyDelays)
     };
   }
 
@@ -560,7 +565,7 @@
       throw new Error('云端配置不是有效的 TEMPO-7 数据。');
     }
     const remoteDataSchema = Number(rawConfig.dataSchemaVersion || 1);
-    if (!Number.isFinite(remoteDataSchema) || remoteDataSchema > 6) {
+    if (!Number.isFinite(remoteDataSchema) || remoteDataSchema > 7) {
       throw new Error(`云端数据 schema v${rawConfig.dataSchemaVersion} 高于当前 TEMPO-7 可读取版本。`);
     }
 
@@ -578,6 +583,7 @@
     customTypes = importedCustomTypes;
     templates = importedTemplates;
     dailyOverrides = normalizeImportedOverrides(rawConfig.dailyOverrides, importedTemplates, importedCustomTypes);
+    dailyDelays = normalizeDailyDelays(rawConfig.dailyDelays);
 
     const requestedId = rawConfig.settings?.activeTemplateId;
     const importedActiveId = templates.some(template => template.id === requestedId) ? requestedId : templates[0].id;
@@ -597,6 +603,7 @@
     try {
       saveAll();
       saveDailyOverrides();
+      saveDailyDelays();
     } finally {
       cloudSuppressDirty = false;
     }
@@ -1663,6 +1670,56 @@
     return {};
   }
 
+  function normalizeDailyDelays(rawDelays) {
+    const result = {};
+    if (!rawDelays || typeof rawDelays !== 'object' || Array.isArray(rawDelays)) return result;
+
+    for (const [date, rawEntry] of Object.entries(rawDelays)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const rawMinutes = typeof rawEntry === 'number' ? rawEntry : rawEntry?.minutes;
+      const minutes = Math.round(Number(rawMinutes));
+      if (!Number.isFinite(minutes) || minutes <= 0) continue;
+      result[date] = {
+        minutes: Math.min(1439, minutes),
+        updatedAt: (typeof rawEntry === 'object' && rawEntry?.updatedAt) || new Date().toISOString()
+      };
+    }
+    return result;
+  }
+
+  function loadDailyDelays() {
+    try {
+      return normalizeDailyDelays(JSON.parse(localStorage.getItem(STORAGE_KEYS.dailyDelays)));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveDailyDelays() {
+    localStorage.setItem(STORAGE_KEYS.dailyDelays, JSON.stringify(dailyDelays));
+    markCloudDirty();
+  }
+
+  function getDailyDelay(date) {
+    return Math.max(0, Math.min(1439, Math.round(Number(dailyDelays?.[date]?.minutes) || 0)));
+  }
+
+  function setDailyDelay(date, minutes) {
+    const normalized = Math.max(0, Math.min(1439, Math.round(Number(minutes) || 0)));
+    if (normalized <= 0) {
+      clearDailyDelay(date);
+      return;
+    }
+    dailyDelays[date] = { minutes: normalized, updatedAt: new Date().toISOString() };
+    saveDailyDelays();
+  }
+
+  function clearDailyDelay(date) {
+    if (!dailyDelays?.[date]) return;
+    delete dailyDelays[date];
+    saveDailyDelays();
+  }
+
   function saveDailyOverrides() {
     localStorage.setItem(STORAGE_KEYS.dailyOverrides, JSON.stringify(dailyOverrides));
     markCloudDirty();
@@ -1689,16 +1746,52 @@
     saveDailyOverrides();
   }
 
+  const delayedScheduleCache = { tasksRef: null, delayMinutes: -1, tasks: [] };
+
+  function applyDelayToTasks(tasks, delayMinutes) {
+    const minutes = Math.max(0, Math.min(1439, Math.round(Number(delayMinutes) || 0)));
+    if (!minutes) return tasks;
+    if (delayedScheduleCache.tasksRef === tasks && delayedScheduleCache.delayMinutes === minutes) {
+      return delayedScheduleCache.tasks;
+    }
+
+    const shiftSeconds = minutes * 60;
+    const dayLimit = timeToSeconds('23:59');
+    const shifted = [];
+    for (const task of tasks) {
+      const start = timeToSeconds(task.start) + shiftSeconds;
+      const end = timeToSeconds(task.end) + shiftSeconds;
+      if (start >= dayLimit) continue;
+      const clippedEnd = Math.min(end, dayLimit);
+      if (clippedEnd <= start) continue;
+      shifted.push({
+        ...task,
+        start: secondsToClock(start),
+        end: secondsToClock(clippedEnd)
+      });
+    }
+
+    delayedScheduleCache.tasksRef = tasks;
+    delayedScheduleCache.delayMinutes = minutes;
+    delayedScheduleCache.tasks = shifted;
+    return shifted;
+  }
+
   function getScheduleSource(now = getNow()) {
     const date = formatDate(now);
     const template = getActiveTemplate(now);
     const override = getDailyOverride(date, template.id);
+    const delayMinutes = getDailyDelay(date);
+    const baseTasks = override ? override.tasks : template.tasks;
+    const delayUpdatedAt = dailyDelays?.[date]?.updatedAt || 'none';
     return {
       date,
       template,
-      modified: !!override,
-      tasks: override ? override.tasks : template.tasks,
-      scheduleKey: `${template.id}|${override?.updatedAt || 'template'}`
+      modified: !!override || delayMinutes > 0,
+      taskModified: !!override,
+      delayMinutes,
+      tasks: applyDelayToTasks(baseTasks, delayMinutes),
+      scheduleKey: `${template.id}|${override?.updatedAt || 'template'}|delay:${delayMinutes}:${delayUpdatedAt}`
     };
   }
 
@@ -1888,7 +1981,7 @@
 
     const log = loadRealTriggerLog(current.date);
     for (const event of crossed) {
-      const key = `${current.date}|${source.template.id}|${event.id}`;
+      const key = `${current.date}|${source.scheduleKey}|${event.id}`;
       if (log.has(key)) continue;
       log.add(key);
       playSoundAsset(event.assetId);
@@ -2205,9 +2298,20 @@
   function renderTodayIndicator(now = getNow()) {
     const source = getScheduleSource(now);
     els.todayModeBadge.hidden = !source.modified;
+    if (source.modified) {
+      els.todayModeBadge.textContent = source.delayMinutes > 0
+        ? source.taskModified
+          ? `TODAY // MODIFIED // +${formatDelayDuration(source.delayMinutes)}`
+          : `TODAY // DELAYED // +${formatDelayDuration(source.delayMinutes)}`
+        : 'TODAY // MODIFIED';
+    }
     els.todayBtn.classList.toggle('status-enabled', source.modified);
     els.todayBtn.textContent = 'TODAY';
-    els.todayBtn.title = source.modified ? '今天存在临时修改' : '编辑今天的运行日程';
+    els.todayBtn.title = source.delayMinutes > 0
+      ? `今日日程已推迟 ${formatDelayDuration(source.delayMinutes)}${source.taskModified ? '，并存在临时修改' : ''}`
+      : source.modified
+        ? '今天存在临时修改'
+        : '编辑今天的运行日程';
   }
 
   function stopScheduleCruiseLoop() {
@@ -2736,6 +2840,71 @@
     render();
   }
 
+  function formatDelayDuration(minutes) {
+    const total = Math.max(0, Math.round(Number(minutes) || 0));
+    const hours = Math.floor(total / 60);
+    const mins = total % 60;
+    if (hours && mins) return `${hours}H ${mins}M`;
+    if (hours) return `${hours}H`;
+    return `${mins}M`;
+  }
+
+  function refreshTodayDelayControls(date) {
+    const delay = getDailyDelay(date);
+    els.todayDelayHours.value = String(Math.floor(delay / 60));
+    els.todayDelayMinutes.value = String(delay % 60);
+    els.todayDelayStatus.textContent = delay > 0 ? `DELAY +${formatDelayDuration(delay)}` : 'NO DELAY';
+    els.todayDelayStatus.classList.toggle('is-active', delay > 0);
+    els.resetTodayDelayBtn.disabled = delay <= 0;
+  }
+
+  function refreshTodayStatusDisplay(date, templateId) {
+    const override = getDailyOverride(date, templateId);
+    const delayMinutes = getDailyDelay(date);
+    els.todayStatusLabel.textContent = override && delayMinutes > 0
+      ? `MODIFIED +${formatDelayDuration(delayMinutes)}`
+      : override
+        ? 'MODIFIED'
+        : delayMinutes > 0
+          ? `DELAYED +${formatDelayDuration(delayMinutes)}`
+          : 'TEMPLATE';
+    els.todayStatusLabel.classList.toggle('is-modified', !!override || delayMinutes > 0);
+    refreshTodayDelayControls(date);
+  }
+
+  function readTodayDelayInput() {
+    const hours = Number(els.todayDelayHours.value);
+    const minutes = Number(els.todayDelayMinutes.value);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  function applyTodayDelay() {
+    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    const total = readTodayDelayInput();
+    if (total === null) return showTodayError('推迟时间必须为 0–23 小时与 0–59 分钟。');
+
+    if (total <= 0) clearDailyDelay(todayEditorContext.date);
+    else setDailyDelay(todayEditorContext.date, total);
+
+    refreshAfterTodayChange();
+    refreshTodayStatusDisplay(todayEditorContext.date, todayEditorContext.templateId);
+    showTodayMessage(total > 0
+      ? `今天的日程已整体推迟 ${formatDelayDuration(total)}；超过 23:59 的部分会直接消失。`
+      : '今天的日程推迟已取消。');
+  }
+
+  function resetTodayDelay() {
+    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (getDailyDelay(todayEditorContext.date) <= 0) return;
+    clearDailyDelay(todayEditorContext.date);
+    refreshAfterTodayChange();
+    refreshTodayStatusDisplay(todayEditorContext.date, todayEditorContext.templateId);
+    showTodayMessage('今天的日程推迟已取消。');
+  }
+
   function renderTodayEditor() {
     const now = getNow();
     const date = formatDate(now);
@@ -2747,8 +2916,7 @@
     todayEditorContext = { date, templateId: template.id };
     els.todayDateLabel.textContent = date;
     els.todayBaseTemplate.textContent = template.name;
-    els.todayStatusLabel.textContent = override ? 'MODIFIED' : 'TEMPLATE';
-    els.todayStatusLabel.classList.toggle('is-modified', !!override);
+    refreshTodayStatusDisplay(date, template.id);
     els.todayRows.replaceChildren();
     for (const task of tasks) addTodayRow(task);
     renderTodayEmptyState();
@@ -2944,6 +3112,7 @@
         weekday: dayKey,
         mappedTemplateId: settings.weekPlan?.days?.[dayKey] || null
       },
+      delayMinutes: getDailyDelay(todayEditorContext.date),
       tasks
     };
 
@@ -2990,13 +3159,15 @@
     const template = getTemplateById(todayEditorContext.templateId);
     if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
     const hasOverride = !!getDailyOverride(todayEditorContext.date, template.id);
+    const hasDelay = getDailyDelay(todayEditorContext.date) > 0;
     const hasUnsavedChanges = !tasksEquivalent(collectTodayTasks(), template.tasks);
-    if ((hasOverride || hasUnsavedChanges) && !confirm('把今天恢复为基础模板？当前 TODAY 修改会被清除。')) return;
+    if ((hasOverride || hasDelay || hasUnsavedChanges) && !confirm('把今天恢复为基础模板？当前 TODAY 修改与推迟设置都会被清除。')) return;
 
     clearDailyOverride(todayEditorContext.date, template.id);
+    clearDailyDelay(todayEditorContext.date);
     refreshAfterTodayChange();
     renderTodayEditor();
-    showTodayMessage('今天已恢复为基础模板。');
+    showTodayMessage('今天已恢复为基础模板，推迟设置已清除。');
   }
 
   function loadRunState() {
@@ -3165,13 +3336,14 @@
       const payload = {
         app: 'TEMPO-7',
         appVersion: APP_VERSION,
-        schemaVersion: 6,
+        schemaVersion: 7,
         backupType: 'full',
         exportedAt: new Date().toISOString(),
         templates,
         customTypes,
         settings,
         dailyOverrides,
+        dailyDelays,
         media: {
           format: 1,
           audioAssets
@@ -3191,7 +3363,7 @@
       const audioSummary = audioAssets.length
         ? `${audioAssets.length} 个铃声音频（原始音频约 ${formatFileSize(audioBytes)}）`
         : '未配置铃声音频';
-      showDataMessage(`完整备份已导出：模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、铃声设置和 ${audioSummary}。`, true);
+      showDataMessage(`完整备份已导出：模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、TODAY DELAY、外观、铃声设置和 ${audioSummary}。`, true);
     } catch (err) {
       showDataMessage(err.message || '完整备份导出失败。', false);
     } finally {
@@ -3243,6 +3415,7 @@
       customTypes = importedCustomTypes;
       templates = importedTemplates;
       dailyOverrides = normalizeImportedOverrides(payload.dailyOverrides, importedTemplates, importedCustomTypes);
+      dailyDelays = normalizeDailyDelays(payload.dailyDelays);
 
       const requestedId = payload.settings?.activeTemplateId;
       const importedVolume = Number(payload.settings?.sound?.volume);
@@ -3267,6 +3440,7 @@
       editorTemplateId = importedEffective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : importedEffective.id;
       saveAll();
       saveDailyOverrides();
+      saveDailyDelays();
       refreshTemplateSelects();
       await refreshSoundUi();
       scheduleCruise.renderKey = null;
@@ -3277,7 +3451,7 @@
       const mediaMessage = mediaResult.legacy
         ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
         : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
-      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE 与铃声设置。${mediaMessage} 重新打开或点击 AUDIO 后可恢复音频播放。`, true);
+      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE、TODAY DELAY 与铃声设置。${mediaMessage} 重新打开或点击 AUDIO 后可恢复音频播放。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -3405,6 +3579,16 @@
     });
     els.saveTodayBtn.addEventListener('click', saveTodayOverride);
     els.resetTodayBtn.addEventListener('click', resetTodayOverride);
+    els.applyTodayDelayBtn.addEventListener('click', applyTodayDelay);
+    els.resetTodayDelayBtn.addEventListener('click', resetTodayDelay);
+    for (const input of [els.todayDelayHours, els.todayDelayMinutes]) {
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          applyTodayDelay();
+        }
+      });
+    }
     els.exportTodayBtn.addEventListener('click', exportTodayJson);
     els.openTodayTemplatePanelBtn.addEventListener('click', openTodayTemplatePanel);
     els.closeTodayTemplatePanelBtn.addEventListener('click', closeTodayTemplatePanel);

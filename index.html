@@ -15,7 +15,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.8.2b" />
+  <link rel="stylesheet" href="style.css?v=0.8.3" />
 </head>
 <body class="launch-active">
   <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
@@ -32,7 +32,7 @@
     <div id="brandDock" class="brand-dock">
       <div id="sharedBrandBlock" class="brand-wrap shared-brand-block">
         <div class="brand">TEMPO-7</div>
-        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.2b</span><span id="systemDate">----</span></div>
+        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.3</span><span id="systemDate">----</span></div>
       </div>
     </div>
 
@@ -172,7 +172,25 @@
         <div class="today-meta-cell"><span>STATE</span><strong id="todayStatusLabel">TEMPLATE</strong></div>
       </div>
 
-      <div class="editor-hint">这里只修改今天。SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
+      <section class="today-delay-panel" aria-label="今日推迟">
+        <div class="today-delay-copy">
+          <div class="eyebrow">DELAY TODAY</div>
+          <strong id="todayDelayStatus">NO DELAY</strong>
+          <span>整日日程向后平移；任务长度保持不变，越过 23:59 的部分直接截去。仅影响今天。</span>
+        </div>
+        <label class="today-delay-field">
+          <span>HOURS</span>
+          <input id="todayDelayHours" type="number" min="0" max="23" step="1" inputmode="numeric" value="0" />
+        </label>
+        <label class="today-delay-field">
+          <span>MINUTES</span>
+          <input id="todayDelayMinutes" type="number" min="0" max="59" step="1" inputmode="numeric" value="0" />
+        </label>
+        <button type="button" id="applyTodayDelayBtn" class="btn btn-primary">APPLY DELAY</button>
+        <button type="button" id="resetTodayDelayBtn" class="btn">RESET DELAY</button>
+      </section>
+
+      <div class="editor-hint">这里只修改今天。下方任务时间保持为未推迟的基准时间；DELAY TODAY 会在运行时整体后移。SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
 
       <div class="today-editor-head">
         <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span>ACTION</span>
@@ -489,6 +507,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.8.2b"></script>
+  <script src="app.js?v=0.8.3"></script>
 </body>
 </html>
