@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.3';
+  const APP_VERSION = '0.8.4';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -181,7 +181,7 @@
     cloudSyncNowBtn: $('cloudSyncNowBtn'), cloudDisconnectBtn: $('cloudDisconnectBtn'), cloudConflictPanel: $('cloudConflictPanel'),
     cloudConflictTitle: $('cloudConflictTitle'), cloudConflictCopy: $('cloudConflictCopy'), cloudConflictCloudMeta: $('cloudConflictCloudMeta'),
     cloudConflictLocalMeta: $('cloudConflictLocalMeta'), cloudUseCloudBtn: $('cloudUseCloudBtn'), cloudUseDeviceBtn: $('cloudUseDeviceBtn'),
-    cloudStatusDetail: $('cloudStatusDetail'), cloudMessage: $('cloudMessage')
+    cloudStatusDetail: $('cloudStatusDetail'), cloudMessage: $('cloudMessage'), cloudAutoSyncInput: $('cloudAutoSyncInput')
   };
 
   let customTypes = loadCustomTypes();
@@ -278,6 +278,7 @@
       lastSyncAt: typeof raw.lastSyncAt === 'string' ? raw.lastSyncAt : null,
       localDirty: raw.localDirty === true,
       localModifiedAt: typeof raw.localModifiedAt === 'string' ? raw.localModifiedAt : null,
+      autoSync: raw.autoSync !== false,
       conflict: raw.conflict === true,
       conflictCloudRevision: Number.isInteger(raw.conflictCloudRevision) ? raw.conflictCloudRevision : null,
       conflictCloudUpdatedAt: typeof raw.conflictCloudUpdatedAt === 'string' ? raw.conflictCloudUpdatedAt : null
@@ -334,6 +335,7 @@
     els.cloudLastSyncLabel.textContent = formatCloudDateTime(cloudState.lastSyncAt);
     els.cloudDeviceLabel.textContent = cloudState.deviceId.replace(/^device-/, '').slice(0, 18) || '—';
     els.cloudStatusDetail.textContent = cloudUiDetail || (connected ? '已连接。' : '未连接。');
+    if (els.cloudAutoSyncInput) els.cloudAutoSyncInput.checked = cloudState.autoSync !== false;
 
     const conflict = connected && cloudState.conflict;
     els.cloudConflictPanel.hidden = !conflict;
@@ -348,6 +350,35 @@
     els.cloudUseCloudBtn.disabled = busy;
     els.cloudUseDeviceBtn.disabled = busy;
     els.cloudConnectBtn.disabled = busy;
+    if (els.cloudAutoSyncInput) els.cloudAutoSyncInput.disabled = busy;
+  }
+
+  function setCloudAutoSync(enabled) {
+    cloudState.autoSync = !!enabled;
+    if (!cloudState.autoSync && cloudSyncTimerId !== null) {
+      clearTimeout(cloudSyncTimerId);
+      cloudSyncTimerId = null;
+    }
+    saveCloudState();
+
+    if (cloudState.connected && cloudState.syncKey && cloudState.conflict) {
+      renderCloudUi();
+      return;
+    }
+
+    if (cloudState.connected && cloudState.syncKey) {
+      if (cloudState.autoSync) {
+        setCloudStatus(cloudState.localDirty ? 'LOCAL CHANGES' : 'CONNECTED', cloudState.localDirty
+          ? 'AUTO SYNC 已开启；本机改动将自动同步。'
+          : 'AUTO SYNC 已开启；保存后的改动会自动同步。');
+        if (cloudState.localDirty) scheduleCloudSync(350);
+      } else {
+        setCloudStatus(cloudState.localDirty ? 'LOCAL CHANGES' : 'CONNECTED', cloudState.localDirty
+          ? 'AUTO SYNC 已关闭；本机有未同步改动，可使用 SYNC NOW。'
+          : 'AUTO SYNC 已关闭；可随时使用 SYNC NOW 手动同步。');
+      }
+    }
+    renderCloudUi();
   }
 
   function markCloudDirty() {
@@ -357,13 +388,15 @@
     cloudState.localModifiedAt = new Date().toISOString();
     saveCloudState();
     if (cloudState.connected) {
-      setCloudStatus('LOCAL CHANGES', '本机有尚未同步的改动。');
-      scheduleCloudSync();
+      setCloudStatus('LOCAL CHANGES', cloudState.autoSync
+        ? '本机有尚未同步的改动；AUTO SYNC 已排队。'
+        : '本机有尚未同步的改动；AUTO SYNC 已关闭。');
+      if (cloudState.autoSync) scheduleCloudSync();
     }
   }
 
   function scheduleCloudSync(delay = CLOUD_DEBOUNCE_MS) {
-    if (!cloudState.connected || !cloudState.syncKey || cloudState.conflict) return;
+    if (!cloudState.autoSync || !cloudState.connected || !cloudState.syncKey || cloudState.conflict) return;
     if (cloudSyncTimerId !== null) clearTimeout(cloudSyncTimerId);
     cloudSyncTimerId = window.setTimeout(() => {
       cloudSyncTimerId = null;
@@ -2723,6 +2756,48 @@
     els.typeDialog.showModal();
   }
 
+  function suggestedInsertedTask(previousRow, nextRow) {
+    const previousEnd = previousRow?.querySelector('.row-end')?.value || '';
+    const nextStart = nextRow?.querySelector('.row-start')?.value || '';
+    const fitsGap = previousEnd && nextStart && timeToSeconds(previousEnd) < timeToSeconds(nextStart);
+    return {
+      start: fitsGap ? previousEnd : '',
+      end: fitsGap ? nextStart : '',
+      name: '',
+      category: 'custom',
+      note: ''
+    };
+  }
+
+  function refreshInsertControls(container, rowSelector, insertRow) {
+    container.querySelectorAll('.task-insert-slot').forEach(node => node.remove());
+    const rows = [...container.querySelectorAll(rowSelector)];
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      const previousRow = rows[index];
+      const nextRow = rows[index + 1];
+      const slot = document.createElement('div');
+      slot.className = 'task-insert-slot';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'task-insert-btn';
+      button.textContent = '+ INSERT';
+      button.setAttribute('aria-label', `在第 ${index + 1} 与第 ${index + 2} 个日程之间插入新日程`);
+      button.addEventListener('click', () => {
+        insertRow(suggestedInsertedTask(previousRow, nextRow), nextRow);
+      });
+      slot.appendChild(button);
+      previousRow.after(slot);
+    }
+  }
+
+  function refreshEditorInsertControls() {
+    refreshInsertControls(els.scheduleRows, '.schedule-row', (task, beforeNode) => addEditorRow(task, beforeNode));
+  }
+
+  function refreshTodayInsertControls() {
+    refreshInsertControls(els.todayRows, '.today-row', (task, beforeNode) => addTodayRow(task, beforeNode));
+  }
+
   function renderEditor() {
     const template = templates.find(t => t.id === editorTemplateId) || templates[0];
     editorTemplateId = template.id;
@@ -2730,10 +2805,11 @@
     els.templateNameInput.value = template.name;
     els.scheduleRows.replaceChildren();
     for (const task of [...template.tasks].sort((a,b) => timeToSeconds(a.start)-timeToSeconds(b.start))) addEditorRow(task);
+    refreshEditorInsertControls();
     hideScheduleError();
   }
 
-  function addEditorRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }) {
+  function addEditorRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }, beforeNode = null) {
     const node = els.scheduleRowTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.taskId = task.id || makeId('task');
     node.querySelector('.row-start').value = task.start || '';
@@ -2741,8 +2817,14 @@
     node.querySelector('.row-name').value = task.name || '';
     populateTypeSelect(node.querySelector('.row-category'), task.category || 'custom');
     bindNoteEditorRow(node, task.note || '');
-    node.querySelector('.row-delete').addEventListener('click', () => node.remove());
-    els.scheduleRows.appendChild(node);
+    node.querySelector('.row-delete').addEventListener('click', () => {
+      node.remove();
+      refreshEditorInsertControls();
+    });
+    if (beforeNode && beforeNode.parentNode === els.scheduleRows) els.scheduleRows.insertBefore(node, beforeNode);
+    else els.scheduleRows.appendChild(node);
+    refreshEditorInsertControls();
+    return node;
   }
 
   function collectEditorTasks() {
@@ -2919,6 +3001,7 @@
     refreshTodayStatusDisplay(date, template.id);
     els.todayRows.replaceChildren();
     for (const task of tasks) addTodayRow(task);
+    refreshTodayInsertControls();
     renderTodayEmptyState();
     hideTodayError();
     els.todayMessage.hidden = true;
@@ -2926,7 +3009,7 @@
     refreshTodayTemplateWeekAction();
   }
 
-  function addTodayRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }) {
+  function addTodayRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }, beforeNode = null) {
     const node = els.todayRowTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.taskId = task.id || makeId('task');
     node.querySelector('.row-start').value = task.start || '';
@@ -2936,11 +3019,15 @@
     bindNoteEditorRow(node, task.note || '');
     node.querySelector('.today-skip').addEventListener('click', () => {
       node.remove();
+      refreshTodayInsertControls();
       renderTodayEmptyState();
     });
-    els.todayRows.appendChild(node);
     const empty = els.todayRows.querySelector('.empty-state');
     if (empty) empty.remove();
+    if (beforeNode && beforeNode.parentNode === els.todayRows) els.todayRows.insertBefore(node, beforeNode);
+    else els.todayRows.appendChild(node);
+    refreshTodayInsertControls();
+    return node;
   }
 
   function renderTodayEmptyState() {
@@ -3613,6 +3700,7 @@
       }
     });
     els.cloudSyncNowBtn?.addEventListener('click', () => syncCloudNow({ automatic: false }));
+    els.cloudAutoSyncInput?.addEventListener('change', () => setCloudAutoSync(els.cloudAutoSyncInput.checked));
     els.cloudDisconnectBtn?.addEventListener('click', disconnectCloud);
     els.cloudUseCloudBtn?.addEventListener('click', () => resolveCloudConflict(true));
     els.cloudUseDeviceBtn?.addEventListener('click', () => resolveCloudConflict(false));
@@ -3694,7 +3782,7 @@
       } else {
         render();
         requestScheduleCruise();
-        if (cloudState.connected) syncCloudNow({ automatic: true }).catch(() => {});
+        if (cloudState.connected && cloudState.autoSync) syncCloudNow({ automatic: true }).catch(() => {});
       }
       scheduleNextRuntimeTick();
     });
@@ -3707,7 +3795,7 @@
     });
 
     window.addEventListener('online', () => {
-      if (cloudState.connected) syncCloudNow({ automatic: true }).catch(() => {});
+      if (cloudState.connected && cloudState.autoSync) syncCloudNow({ automatic: true }).catch(() => {});
     });
     window.addEventListener('offline', () => {
       if (cloudState.connected) setCloudStatus('OFFLINE', '当前离线；本机继续正常运行。');
@@ -3747,7 +3835,7 @@
     }).catch(() => {});
     scheduleNextRuntimeTick();
     requestScheduleCruise();
-    if (cloudState.connected && cloudState.syncKey) {
+    if (cloudState.connected && cloudState.syncKey && cloudState.autoSync) {
       window.setTimeout(() => syncCloudNow({ automatic: true }).catch(() => {}), 900);
     }
   }

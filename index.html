@@ -15,7 +15,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.8.3" />
+  <link rel="stylesheet" href="style.css?v=0.8.4" />
 </head>
 <body class="launch-active">
   <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
@@ -32,7 +32,7 @@
     <div id="brandDock" class="brand-dock">
       <div id="sharedBrandBlock" class="brand-wrap shared-brand-block">
         <div class="brand">TEMPO-7</div>
-        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.3</span><span id="systemDate">----</span></div>
+        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.4</span><span id="systemDate">----</span></div>
       </div>
     </div>
 
@@ -134,7 +134,7 @@
         <input id="templateNameInput" type="text" maxlength="60" />
       </label>
 
-      <div class="editor-hint">只使用时间段。允许空档，但不允许任务互相重叠。点击 TYPE 与删除键之间的 ✎ 可添加单行 NOTE（最多 200 字符）。</div>
+      <div class="editor-hint">只使用时间段。允许空档，但不允许任务互相重叠。可使用行间的 + INSERT 在两个日程之间插入新日程；✎ 可添加单行 NOTE（最多 200 字符）。</div>
 
       <div class="schedule-editor-head">
         <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span></span>
@@ -190,7 +190,7 @@
         <button type="button" id="resetTodayDelayBtn" class="btn">RESET DELAY</button>
       </section>
 
-      <div class="editor-hint">这里只修改今天。下方任务时间保持为未推迟的基准时间；DELAY TODAY 会在运行时整体后移。SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
+      <div class="editor-hint">这里只修改今天。下方任务时间保持为未推迟的基准时间；DELAY TODAY 会在运行时整体后移。可使用行间的 + INSERT 插入新日程；SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
 
       <div class="today-editor-head">
         <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span>ACTION</span>
@@ -292,7 +292,7 @@
           <strong id="cloudStatusLabel" class="cloud-status" data-status="DISCONNECTED">DISCONNECTED</strong>
         </div>
 
-        <p class="editor-hint">Local First：TEMPO-7 仍以本机 localStorage / IndexedDB 运行；Cloudflare 只负责在设备之间同步配置与所有 ENTRY / EXIT MP3 / WAV。断网不会阻止日程和铃声继续工作。</p>
+        <p class="editor-hint">Local First：本机数据与离线使用不依赖云端。连接后可使用 SYNC NOW 手动同步，也可通过 AUTO SYNC AFTER SAVE 控制保存后是否自动同步。</p>
 
         <div class="cloud-endpoint-row">
           <span>ENDPOINT</span>
@@ -315,6 +315,10 @@
             <div class="cloud-meta-cell"><span>LAST SYNC</span><strong id="cloudLastSyncLabel">—</strong></div>
             <div class="cloud-meta-cell"><span>DEVICE</span><strong id="cloudDeviceLabel">—</strong></div>
           </div>
+          <label class="switch-field cloud-auto-sync-switch">
+            <input id="cloudAutoSyncInput" type="checkbox" />
+            <span>AUTO SYNC AFTER SAVE</span>
+          </label>
           <div class="cloud-actions">
             <button type="button" id="cloudSyncNowBtn" class="btn btn-primary">SYNC NOW</button>
             <button type="button" id="cloudDisconnectBtn" class="btn btn-danger-outline">DISCONNECT</button>
@@ -507,6 +511,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.8.3"></script>
+  <script src="app.js?v=0.8.4"></script>
 </body>
 </html>

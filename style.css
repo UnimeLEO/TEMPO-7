@@ -1237,3 +1237,45 @@ body.launch-active.launch-settling .shared-brand-block .microline {
   body.launch-active .shared-brand-block .brand,
   body.launch-active .shared-brand-block .microline { transition-duration: .18s; }
 }
+
+
+/* v0.8.4 — inline schedule insertion + controllable cloud auto sync */
+.task-insert-slot {
+  display: grid;
+  grid-template-columns: minmax(18px, 1fr) auto minmax(18px, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 24px;
+  margin: -4px 0 4px;
+}
+.task-insert-slot::before,
+.task-insert-slot::after {
+  content: '';
+  height: 1px;
+  background: color-mix(in srgb, var(--line) 72%, transparent);
+}
+.task-insert-btn {
+  min-height: 22px;
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .11em;
+  cursor: pointer;
+}
+.task-insert-btn:hover,
+.task-insert-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+  outline: none;
+}
+.cloud-auto-sync-switch {
+  margin: 12px 0 0;
+  width: fit-content;
+}
+@media (max-width: 860px) {
+  .task-insert-slot { margin: 0 0 8px; }
+}
