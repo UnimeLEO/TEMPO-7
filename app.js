@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.2a';
+  const APP_VERSION = '0.8.2b';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -205,6 +205,16 @@
     audioContext: null,
     unlocked: false,
     buffers: new Map(),
+    preview: {
+      assetId: null,
+      source: null,
+      gain: null,
+      button: null,
+      offset: 0,
+      startedAt: 0,
+      state: 'stopped',
+      generation: 0
+    },
     lastObserved: null,
     eventCacheKey: null,
     eventCache: [],
@@ -962,6 +972,7 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (soundRuntime.preview.assetId === id) stopSoundPreview();
     if (!suppressCloudSync) markCloudDirty();
   }
 
@@ -978,6 +989,7 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (soundRuntime.preview.assetId === id) stopSoundPreview();
     if (!suppressCloudSync) markCloudDirty();
   }
 
@@ -1002,6 +1014,7 @@
       db.close();
     }
     soundRuntime.buffers.delete(id);
+    if (soundRuntime.preview.assetId === id) stopSoundPreview();
     if (!suppressCloudSync) markCloudDirty();
   }
 
@@ -1143,6 +1156,117 @@
     }
   }
 
+  function setPreviewButtonLabel(button, playing) {
+    if (!button) return;
+    button.textContent = playing ? 'PAUSE' : 'PREVIEW';
+    button.setAttribute('aria-label', playing ? 'Pause preview' : 'Preview sound');
+  }
+
+  function stopSoundPreview() {
+    const preview = soundRuntime.preview;
+    preview.generation += 1;
+    if (preview.source) {
+      preview.source.onended = null;
+      try { preview.source.stop(); } catch (_) {}
+      try { preview.source.disconnect(); } catch (_) {}
+    }
+    if (preview.gain) {
+      try { preview.gain.disconnect(); } catch (_) {}
+    }
+    setPreviewButtonLabel(preview.button, false);
+    preview.assetId = null;
+    preview.source = null;
+    preview.gain = null;
+    preview.button = null;
+    preview.offset = 0;
+    preview.startedAt = 0;
+    preview.state = 'stopped';
+  }
+
+  function pauseSoundPreview() {
+    const preview = soundRuntime.preview;
+    if (preview.state !== 'playing' || !preview.source) return false;
+    const context = ensureAudioContext();
+    const buffer = soundRuntime.buffers.get(preview.assetId);
+    const elapsed = Math.max(0, context.currentTime - preview.startedAt);
+    const duration = buffer?.duration || Infinity;
+    preview.offset = Math.min(preview.offset + elapsed, duration);
+    preview.state = 'paused';
+    preview.generation += 1;
+    preview.source.onended = null;
+    try { preview.source.stop(); } catch (_) {}
+    try { preview.source.disconnect(); } catch (_) {}
+    if (preview.gain) {
+      try { preview.gain.disconnect(); } catch (_) {}
+    }
+    preview.source = null;
+    preview.gain = null;
+    preview.startedAt = 0;
+    setPreviewButtonLabel(preview.button, false);
+    return true;
+  }
+
+  async function startOrResumeSoundPreview(assetId, button) {
+    const context = ensureAudioContext();
+    if (context.state !== 'running') await context.resume();
+    if (context.state !== 'running') throw new Error('浏览器没有允许音频播放。请点击 AUDIO 重试。');
+
+    const buffer = await loadAudioBuffer(assetId);
+    if (!buffer) throw new Error('未找到可试听的音频。');
+
+    const preview = soundRuntime.preview;
+    if (preview.assetId !== assetId) {
+      stopSoundPreview();
+      preview.assetId = assetId;
+      preview.offset = 0;
+    }
+
+    preview.button = button;
+    if (preview.offset >= Math.max(0, buffer.duration - 0.01)) preview.offset = 0;
+
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    gain.gain.value = settings.sound.volume;
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(context.destination);
+
+    const generation = ++preview.generation;
+    preview.source = source;
+    preview.gain = gain;
+    preview.startedAt = context.currentTime;
+    preview.state = 'playing';
+    setPreviewButtonLabel(button, true);
+
+    source.onended = () => {
+      if (preview.generation !== generation || preview.source !== source || preview.state !== 'playing') return;
+      try { source.disconnect(); } catch (_) {}
+      try { gain.disconnect(); } catch (_) {}
+      preview.source = null;
+      preview.gain = null;
+      preview.offset = 0;
+      preview.startedAt = 0;
+      preview.state = 'stopped';
+      setPreviewButtonLabel(preview.button, false);
+    };
+
+    source.start(0, preview.offset);
+    return true;
+  }
+
+  async function toggleSoundPreview(assetId, button) {
+    const preview = soundRuntime.preview;
+    if (preview.assetId === assetId && preview.state === 'playing') {
+      pauseSoundPreview();
+      return 'paused';
+    }
+
+    if (preview.assetId && preview.assetId !== assetId) stopSoundPreview();
+    await unlockAudio();
+    await startOrResumeSoundPreview(assetId, button);
+    return 'playing';
+  }
+
   function makeButton(text, className = 'btn') {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1212,10 +1336,13 @@
 
           const preview = makeButton('PREVIEW');
           preview.disabled = !asset;
+          if (asset && soundRuntime.preview.assetId === assetId) {
+            soundRuntime.preview.button = preview;
+            setPreviewButtonLabel(preview, soundRuntime.preview.state === 'playing');
+          }
           preview.addEventListener('click', async () => {
             try {
-              await unlockAudio();
-              await playSoundAsset(assetId, { ignoreEnabled: true });
+              await toggleSoundPreview(assetId, preview);
               renderRunButton();
             } catch (err) {
               showSoundMessage(err.message || '试听失败。', false);
