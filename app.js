@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '0.8.4';
+  const APP_VERSION = '0.8.5';
   const STORAGE_KEYS = {
     templates: 'tempo7.templates',
     settings: 'tempo7.settings',
@@ -9,6 +9,7 @@
     soundTriggerLog: 'tempo7.soundTriggerLog',
     dailyOverrides: 'tempo7.dailyOverrides',
     dailyDelays: 'tempo7.dailyDelays',
+    datePlans: 'tempo7.datePlans',
     customTypes: 'tempo7.customTypes',
     cloud: 'tempo7.cloud'
   };
@@ -26,6 +27,7 @@
   const BUILT_IN_TYPE_IDS = ['class', 'break', 'meal', 'routine', 'rest', 'custom'];
   const MAX_CUSTOM_TYPES = 6;
   const NOTE_MAX_LENGTH = 200;
+  const DATE_PLAN_RETENTION_DAYS = 30;
   const CUSTOM_TYPE_DEFAULT_COLORS = ['#6F8FAF', '#7D9A72', '#B07C9E', '#9B8662', '#718F91', '#8A78A8'];
 
   const SOUND_CATCHUP_LIMIT_SECONDS = 90;
@@ -165,7 +167,10 @@
     resetAppearanceBtn: $('resetAppearanceBtn'), saveAppearanceBtn: $('saveAppearanceBtn'),
     transitionFlash: $('transitionFlash'), scheduleRowTemplate: $('scheduleRowTemplate'), todayRowTemplate: $('todayRowTemplate'), customTypeRowTemplate: $('customTypeRowTemplate'),
     todayModeBadge: $('todayModeBadge'), todayDateLabel: $('todayDateLabel'), todayBaseTemplate: $('todayBaseTemplate'),
-    todayStatusLabel: $('todayStatusLabel'), todayDelayStatus: $('todayDelayStatus'), todayDelayHours: $('todayDelayHours'), todayDelayMinutes: $('todayDelayMinutes'),
+    todayStatusLabel: $('todayStatusLabel'), dayPlanPrevBtn: $('dayPlanPrevBtn'), dayPlanNextBtn: $('dayPlanNextBtn'),
+    dayPlanTodayBtn: $('dayPlanTodayBtn'), dayPlanTomorrowBtn: $('dayPlanTomorrowBtn'), dayPlanDateInput: $('dayPlanDateInput'),
+    dayPlanTemplateSelect: $('dayPlanTemplateSelect'), dayPlanLoadTemplateBtn: $('dayPlanLoadTemplateBtn'),
+    todayDelayStatus: $('todayDelayStatus'), todayDelayHours: $('todayDelayHours'), todayDelayMinutes: $('todayDelayMinutes'),
     applyTodayDelayBtn: $('applyTodayDelayBtn'), resetTodayDelayBtn: $('resetTodayDelayBtn'),
     todayRows: $('todayRows'), todayError: $('todayError'), todayMessage: $('todayMessage'),
     addTodayTaskBtn: $('addTodayTaskBtn'), addTodayNewTypeBtn: $('addTodayNewTypeBtn'), resetTodayBtn: $('resetTodayBtn'), saveTodayBtn: $('saveTodayBtn'),
@@ -187,8 +192,7 @@
   let customTypes = loadCustomTypes();
   let templates = loadTemplates();
   let settings = loadSettings();
-  let dailyOverrides = loadDailyOverrides();
-  let dailyDelays = loadDailyDelays();
+  let datePlans = loadDatePlans();
   let editorTemplateId = settings.activeTemplateId;
   let todayEditorContext = null;
   let appearanceDraft = null;
@@ -197,6 +201,7 @@
   let lastStateKey = null;
   let lastTemplateUiKey = null;
   let lastRuntimeRenderKey = null;
+  let lastDatePlanCleanupDate = null;
   let runtimeTimerId = null;
   let runState = loadRunState();
   const runtimeScheduleCache = { tasksRef: null, sortedTasks: [] };
@@ -430,13 +435,12 @@
     return {
       app: 'TEMPO-7',
       format: 1,
-      dataSchemaVersion: 7,
+      dataSchemaVersion: 8,
       appVersion: APP_VERSION,
       templates: deepClone(templates),
       customTypes: deepClone(customTypes),
       settings: deepClone(settings),
-      dailyOverrides: deepClone(dailyOverrides),
-      dailyDelays: deepClone(dailyDelays)
+      datePlans: deepClone(datePlans)
     };
   }
 
@@ -598,7 +602,7 @@
       throw new Error('云端配置不是有效的 TEMPO-7 数据。');
     }
     const remoteDataSchema = Number(rawConfig.dataSchemaVersion || 1);
-    if (!Number.isFinite(remoteDataSchema) || remoteDataSchema > 7) {
+    if (!Number.isFinite(remoteDataSchema) || remoteDataSchema > 8) {
       throw new Error(`云端数据 schema v${rawConfig.dataSchemaVersion} 高于当前 TEMPO-7 可读取版本。`);
     }
 
@@ -615,8 +619,6 @@
 
     customTypes = importedCustomTypes;
     templates = importedTemplates;
-    dailyOverrides = normalizeImportedOverrides(rawConfig.dailyOverrides, importedTemplates, importedCustomTypes);
-    dailyDelays = normalizeDailyDelays(rawConfig.dailyDelays);
 
     const requestedId = rawConfig.settings?.activeTemplateId;
     const importedActiveId = templates.some(template => template.id === requestedId) ? requestedId : templates[0].id;
@@ -631,12 +633,15 @@
         bindings: buildSoundBindings(importedCustomTypes)
       }
     };
+    datePlans = rawConfig.datePlans
+      ? normalizeDatePlans(rawConfig.datePlans, importedTemplates, importedCustomTypes)
+      : migrateLegacyDayData(rawConfig.dailyOverrides, rawConfig.dailyDelays, importedTemplates, settings, importedCustomTypes);
+    cleanupExpiredDatePlans({ markDirty: false });
 
     cloudSuppressDirty = true;
     try {
       saveAll();
-      saveDailyOverrides();
-      saveDailyDelays();
+      saveDatePlans(false);
     } finally {
       cloudSuppressDirty = false;
     }
@@ -1674,41 +1679,60 @@
     return initial;
   }
 
-  function loadDailyOverrides() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.dailyOverrides));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        let changed = false;
-        const normalized = {};
-        for (const [date, byTemplate] of Object.entries(parsed)) {
-          if (!byTemplate || typeof byTemplate !== 'object' || Array.isArray(byTemplate)) continue;
-          for (const [templateId, entry] of Object.entries(byTemplate)) {
-            if (!entry || !Array.isArray(entry.tasks)) continue;
-            const tasks = entry.tasks.map(task => {
-              if (!task?.id) changed = true;
-              return normalizeTask(task);
-            });
-            if (!normalized[date]) normalized[date] = {};
-            normalized[date][templateId] = {
-              templateId,
-              tasks,
-              updatedAt: entry.updatedAt || new Date().toISOString()
-            };
-          }
-        }
-        if (changed) localStorage.setItem(STORAGE_KEYS.dailyOverrides, JSON.stringify(normalized));
-        return normalized;
-      }
-    } catch (_) {}
-    return {};
+  function parseDateKey(dateKey) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return null;
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return date;
+  }
+
+  function addDaysToDateKey(dateKey, amount) {
+    const date = parseDateKey(dateKey) || new Date();
+    date.setDate(date.getDate() + Number(amount || 0));
+    return formatDate(date);
+  }
+
+  function resolveTemplateForDateKey(dateKey, templateList = templates, settingsObject = settings) {
+    const date = parseDateKey(dateKey) || getNow();
+    const byId = id => id === OFF_TEMPLATE_ID ? OFF_TEMPLATE : templateList.find(template => template.id === id) || null;
+    if (settingsObject?.weekPlan?.enabled) {
+      const mapped = byId(settingsObject.weekPlan.days?.[String(date.getDay())]);
+      if (mapped) return mapped;
+    }
+    return byId(settingsObject?.activeTemplateId) || templateList[0] || OFF_TEMPLATE;
+  }
+
+  function normalizeDatePlans(rawPlans, importedTemplates = templates, importedCustomTypes = customTypes) {
+    const result = {};
+    if (!rawPlans || typeof rawPlans !== 'object' || Array.isArray(rawPlans)) return result;
+    for (const [date, rawPlan] of Object.entries(rawPlans)) {
+      if (!parseDateKey(date) || !rawPlan || typeof rawPlan !== 'object' || Array.isArray(rawPlan) || !Array.isArray(rawPlan.tasks)) continue;
+      const tasks = normalizeTasks(rawPlan.tasks, importedCustomTypes);
+      const error = validateTasks(tasks, { allowEmpty: true });
+      if (error) throw new Error(`DATE PLAN ${date} 无效：${error}`);
+      const delayMinutes = Math.max(0, Math.min(1439, Math.round(Number(rawPlan.delayMinutes) || 0)));
+      const sourceTemplateId = typeof rawPlan.sourceTemplateId === 'string' ? rawPlan.sourceTemplateId : null;
+      const sourceTemplate = sourceTemplateId === OFF_TEMPLATE_ID
+        ? OFF_TEMPLATE
+        : importedTemplates.find(template => template.id === sourceTemplateId) || null;
+      result[date] = {
+        sourceTemplateId: sourceTemplateId || sourceTemplate?.id || null,
+        sourceTemplateName: sanitizeSingleLine(rawPlan.sourceTemplateName || sourceTemplate?.name || 'DATE PLAN', 80),
+        tasks: tasks.sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start)),
+        delayMinutes,
+        createdAt: rawPlan.createdAt || rawPlan.updatedAt || new Date().toISOString(),
+        updatedAt: rawPlan.updatedAt || new Date().toISOString()
+      };
+    }
+    return result;
   }
 
   function normalizeDailyDelays(rawDelays) {
     const result = {};
     if (!rawDelays || typeof rawDelays !== 'object' || Array.isArray(rawDelays)) return result;
-
     for (const [date, rawEntry] of Object.entries(rawDelays)) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      if (!parseDateKey(date)) continue;
       const rawMinutes = typeof rawEntry === 'number' ? rawEntry : rawEntry?.minutes;
       const minutes = Math.round(Number(rawMinutes));
       if (!Number.isFinite(minutes) || minutes <= 0) continue;
@@ -1720,63 +1744,145 @@
     return result;
   }
 
-  function loadDailyDelays() {
-    try {
-      return normalizeDailyDelays(JSON.parse(localStorage.getItem(STORAGE_KEYS.dailyDelays)));
-    } catch (_) {
-      return {};
+  function normalizeImportedOverrides(rawOverrides, importedTemplates, importedCustomTypes = []) {
+    const result = {};
+    if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) return result;
+    const templateIds = new Set([OFF_TEMPLATE_ID, ...importedTemplates.map(template => template.id)]);
+    for (const [date, byTemplate] of Object.entries(rawOverrides)) {
+      if (!parseDateKey(date) || !byTemplate || typeof byTemplate !== 'object' || Array.isArray(byTemplate)) continue;
+      for (const [templateId, entry] of Object.entries(byTemplate)) {
+        if (!templateIds.has(templateId) || !entry || !Array.isArray(entry.tasks)) continue;
+        const tasks = normalizeTasks(entry.tasks, importedCustomTypes);
+        const error = validateTasks(tasks, { allowEmpty: true });
+        if (error) throw new Error(`TODAY OVERRIDE ${date} 无效：${error}`);
+        if (!result[date]) result[date] = {};
+        result[date][templateId] = {
+          templateId,
+          tasks: tasks.sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start)),
+          updatedAt: entry.updatedAt || new Date().toISOString()
+        };
+      }
     }
+    return result;
   }
 
-  function saveDailyDelays() {
-    localStorage.setItem(STORAGE_KEYS.dailyDelays, JSON.stringify(dailyDelays));
-    markCloudDirty();
+  function migrateLegacyDayData(rawOverrides, rawDelays, templateList = templates, settingsObject = settings, importedCustomTypes = customTypes) {
+    const overrides = normalizeImportedOverrides(rawOverrides, templateList, importedCustomTypes);
+    const delays = normalizeDailyDelays(rawDelays);
+    const result = {};
+    const dates = new Set([...Object.keys(overrides), ...Object.keys(delays)]);
+    for (const date of dates) {
+      const entries = Object.values(overrides[date] || {}).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      const chosen = entries[0] || null;
+      const fallbackTemplate = resolveTemplateForDateKey(date, templateList, settingsObject);
+      const sourceTemplate = chosen
+        ? (chosen.templateId === OFF_TEMPLATE_ID ? OFF_TEMPLATE : templateList.find(template => template.id === chosen.templateId) || fallbackTemplate)
+        : fallbackTemplate;
+      const tasks = deepClone(chosen?.tasks || sourceTemplate?.tasks || []);
+      result[date] = {
+        sourceTemplateId: chosen?.templateId || sourceTemplate?.id || null,
+        sourceTemplateName: sourceTemplate?.name || 'DATE PLAN',
+        tasks,
+        delayMinutes: delays[date]?.minutes || 0,
+        createdAt: chosen?.updatedAt || delays[date]?.updatedAt || new Date().toISOString(),
+        updatedAt: [chosen?.updatedAt, delays[date]?.updatedAt].filter(Boolean).sort().at(-1) || new Date().toISOString()
+      };
+    }
+    return result;
+  }
+
+  function loadDatePlans() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.datePlans));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return normalizeDatePlans(parsed);
+    } catch (_) {}
+
+    let legacyOverrides = {};
+    let legacyDelays = {};
+    try { legacyOverrides = JSON.parse(localStorage.getItem(STORAGE_KEYS.dailyOverrides)) || {}; } catch (_) {}
+    try { legacyDelays = JSON.parse(localStorage.getItem(STORAGE_KEYS.dailyDelays)) || {}; } catch (_) {}
+    const migrated = migrateLegacyDayData(legacyOverrides, legacyDelays);
+    if (Object.keys(migrated).length) {
+      localStorage.setItem(STORAGE_KEYS.datePlans, JSON.stringify(migrated));
+      localStorage.removeItem(STORAGE_KEYS.dailyOverrides);
+      localStorage.removeItem(STORAGE_KEYS.dailyDelays);
+    }
+    return migrated;
+  }
+
+  function saveDatePlans(markDirty = true) {
+    localStorage.setItem(STORAGE_KEYS.datePlans, JSON.stringify(datePlans));
+    if (markDirty) markCloudDirty();
+  }
+
+  function getDatePlan(date) {
+    return datePlans?.[date] || null;
+  }
+
+  function setDatePlan(date, { sourceTemplateId = null, sourceTemplateName = '', tasks = [], delayMinutes = 0 } = {}) {
+    const existing = getDatePlan(date);
+    const sourceTemplate = sourceTemplateId === OFF_TEMPLATE_ID ? OFF_TEMPLATE : getTemplateById(sourceTemplateId);
+    datePlans[date] = {
+      sourceTemplateId: sourceTemplateId || sourceTemplate?.id || null,
+      sourceTemplateName: sanitizeSingleLine(sourceTemplateName || sourceTemplate?.name || existing?.sourceTemplateName || 'DATE PLAN', 80),
+      tasks: normalizeTasks(tasks).sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start)),
+      delayMinutes: Math.max(0, Math.min(1439, Math.round(Number(delayMinutes) || 0))),
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    saveDatePlans();
+    return datePlans[date];
+  }
+
+  function ensureDatePlan(date) {
+    const existing = getDatePlan(date);
+    if (existing) return existing;
+    const template = resolveTemplateForDateKey(date);
+    return setDatePlan(date, {
+      sourceTemplateId: template.id,
+      sourceTemplateName: template.name,
+      tasks: deepClone(template.tasks),
+      delayMinutes: 0
+    });
+  }
+
+  function clearDatePlan(date) {
+    if (!getDatePlan(date)) return;
+    delete datePlans[date];
+    saveDatePlans();
   }
 
   function getDailyDelay(date) {
-    return Math.max(0, Math.min(1439, Math.round(Number(dailyDelays?.[date]?.minutes) || 0)));
+    return Math.max(0, Math.min(1439, Math.round(Number(getDatePlan(date)?.delayMinutes) || 0)));
   }
 
   function setDailyDelay(date, minutes) {
+    const plan = ensureDatePlan(date);
     const normalized = Math.max(0, Math.min(1439, Math.round(Number(minutes) || 0)));
-    if (normalized <= 0) {
-      clearDailyDelay(date);
-      return;
-    }
-    dailyDelays[date] = { minutes: normalized, updatedAt: new Date().toISOString() };
-    saveDailyDelays();
+    setDatePlan(date, { ...plan, delayMinutes: normalized });
   }
 
   function clearDailyDelay(date) {
-    if (!dailyDelays?.[date]) return;
-    delete dailyDelays[date];
-    saveDailyDelays();
+    const plan = getDatePlan(date);
+    if (!plan || !plan.delayMinutes) return;
+    setDatePlan(date, { ...plan, delayMinutes: 0 });
   }
 
-  function saveDailyOverrides() {
-    localStorage.setItem(STORAGE_KEYS.dailyOverrides, JSON.stringify(dailyOverrides));
-    markCloudDirty();
-  }
-
-  function getDailyOverride(date, templateId) {
-    return dailyOverrides?.[date]?.[templateId] || null;
-  }
-
-  function setDailyOverride(date, templateId, tasks) {
-    if (!dailyOverrides[date]) dailyOverrides[date] = {};
-    dailyOverrides[date][templateId] = {
-      templateId,
-      tasks: normalizeTasks(tasks),
-      updatedAt: new Date().toISOString()
-    };
-    saveDailyOverrides();
-  }
-
-  function clearDailyOverride(date, templateId) {
-    if (!dailyOverrides?.[date]?.[templateId]) return;
-    delete dailyOverrides[date][templateId];
-    if (!Object.keys(dailyOverrides[date]).length) delete dailyOverrides[date];
-    saveDailyOverrides();
+  function cleanupExpiredDatePlans({ markDirty = true } = {}) {
+    const today = parseDateKey(formatDate(getNow()));
+    if (!today) return 0;
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() - DATE_PLAN_RETENTION_DAYS);
+    let removed = 0;
+    for (const date of Object.keys(datePlans)) {
+      const parsed = parseDateKey(date);
+      if (parsed && parsed < cutoff) {
+        delete datePlans[date];
+        removed += 1;
+      }
+    }
+    if (removed) saveDatePlans(markDirty);
+    return removed;
   }
 
   const delayedScheduleCache = { tasksRef: null, delayMinutes: -1, tasks: [] };
@@ -1813,18 +1919,20 @@
   function getScheduleSource(now = getNow()) {
     const date = formatDate(now);
     const template = getActiveTemplate(now);
-    const override = getDailyOverride(date, template.id);
+    const datePlan = getDatePlan(date);
     const delayMinutes = getDailyDelay(date);
-    const baseTasks = override ? override.tasks : template.tasks;
-    const delayUpdatedAt = dailyDelays?.[date]?.updatedAt || 'none';
+    const baseTasks = datePlan ? datePlan.tasks : template.tasks;
     return {
       date,
       template,
-      modified: !!override || delayMinutes > 0,
-      taskModified: !!override,
+      datePlan,
+      modified: !!datePlan,
+      taskModified: !!datePlan,
       delayMinutes,
       tasks: applyDelayToTasks(baseTasks, delayMinutes),
-      scheduleKey: `${template.id}|${override?.updatedAt || 'template'}|delay:${delayMinutes}:${delayUpdatedAt}`
+      scheduleKey: datePlan
+        ? `date-plan:${date}:${datePlan.updatedAt}|delay:${delayMinutes}`
+        : `${template.id}|template|delay:0`
     };
   }
 
@@ -2215,6 +2323,11 @@
 
   function renderRuntimeFrame(forceState = false) {
     const now = getNow();
+    const dateKey = formatDate(now);
+    if (lastDatePlanCleanupDate !== dateKey) {
+      lastDatePlanCleanupDate = dateKey;
+      cleanupExpiredDatePlans();
+    }
     const sec = getSecondsOfDay(now);
     const state = getScheduleState(now);
     processSoundEvents(now);
@@ -2334,17 +2447,17 @@
     if (source.modified) {
       els.todayModeBadge.textContent = source.delayMinutes > 0
         ? source.taskModified
-          ? `TODAY // MODIFIED // +${formatDelayDuration(source.delayMinutes)}`
-          : `TODAY // DELAYED // +${formatDelayDuration(source.delayMinutes)}`
-        : 'TODAY // MODIFIED';
+          ? `TODAY // DATE PLAN // +${formatDelayDuration(source.delayMinutes)}`
+          : `TODAY // DATE PLAN // +${formatDelayDuration(source.delayMinutes)}`
+        : 'TODAY // DATE PLAN';
     }
     els.todayBtn.classList.toggle('status-enabled', source.modified);
     els.todayBtn.textContent = 'TODAY';
     els.todayBtn.title = source.delayMinutes > 0
-      ? `今日日程已推迟 ${formatDelayDuration(source.delayMinutes)}${source.taskModified ? '，并存在临时修改' : ''}`
+      ? `今日日程使用 DATE PLAN，并推迟 ${formatDelayDuration(source.delayMinutes)}`
       : source.modified
-        ? '今天存在临时修改'
-        : '编辑今天的运行日程';
+        ? '今天正在使用独立 DATE PLAN'
+        : '编辑今天或其他日期的日程';
   }
 
   function stopScheduleCruiseLoop() {
@@ -2692,9 +2805,7 @@
     const ids = new Set(typeIds);
     let count = 0;
     for (const template of templates) count += template.tasks.filter(task => ids.has(task.category)).length;
-    for (const byTemplate of Object.values(dailyOverrides)) {
-      for (const entry of Object.values(byTemplate || {})) count += (entry.tasks || []).filter(task => ids.has(task.category)).length;
-    }
+    for (const plan of Object.values(datePlans)) count += (plan.tasks || []).filter(task => ids.has(task.category)).length;
     return count;
   }
 
@@ -2704,11 +2815,9 @@
       for (const task of tasks) if (ids.has(task.category)) task.category = 'custom';
     };
     for (const template of templates) migrate(template.tasks);
-    for (const byTemplate of Object.values(dailyOverrides)) {
-      for (const entry of Object.values(byTemplate || {})) {
-        migrate(entry.tasks || []);
-        entry.updatedAt = new Date().toISOString();
-      }
+    for (const plan of Object.values(datePlans)) {
+      migrate(plan.tasks || []);
+      plan.updatedAt = new Date().toISOString();
     }
   }
 
@@ -2734,7 +2843,7 @@
     customTypes = normalizeCustomTypes(nextTypes);
     settings.sound.bindings = buildSoundBindings();
     saveAll();
-    saveDailyOverrides();
+    saveDatePlans();
 
     await Promise.allSettled(removedIds.flatMap(typeId => [
       deleteAudioAsset(soundAssetId(typeId, 'start')),
@@ -2772,21 +2881,38 @@
   function refreshInsertControls(container, rowSelector, insertRow) {
     container.querySelectorAll('.task-insert-slot').forEach(node => node.remove());
     const rows = [...container.querySelectorAll(rowSelector)];
-    for (let index = 0; index < rows.length - 1; index += 1) {
-      const previousRow = rows[index];
-      const nextRow = rows[index + 1];
+    if (!rows.length) return;
+
+    const makeInsertSlot = (label, taskFactory, beforeNode) => {
       const slot = document.createElement('div');
       slot.className = 'task-insert-slot';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'task-insert-btn';
       button.textContent = '+ INSERT';
-      button.setAttribute('aria-label', `在第 ${index + 1} 与第 ${index + 2} 个日程之间插入新日程`);
+      button.setAttribute('aria-label', label);
       button.addEventListener('click', () => {
-        insertRow(suggestedInsertedTask(previousRow, nextRow), nextRow);
+        insertRow(taskFactory(), beforeNode);
       });
       slot.appendChild(button);
-      previousRow.after(slot);
+      return slot;
+    };
+
+    const firstRow = rows[0];
+    firstRow.before(makeInsertSlot(
+      '在第 1 个日程前插入新日程',
+      () => suggestedInsertedTask(null, firstRow),
+      firstRow
+    ));
+
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      const previousRow = rows[index];
+      const nextRow = rows[index + 1];
+      previousRow.after(makeInsertSlot(
+        `在第 ${index + 1} 与第 ${index + 2} 个日程之间插入新日程`,
+        () => suggestedInsertedTask(previousRow, nextRow),
+        nextRow
+      ));
     }
   }
 
@@ -2905,11 +3031,6 @@
     if (!confirm(`删除模板“${target.name}”？此操作无法撤销。`)) return;
     const deletedTemplateId = editorTemplateId;
     templates = templates.filter(t => t.id !== deletedTemplateId);
-    for (const date of Object.keys(dailyOverrides)) {
-      if (dailyOverrides[date]?.[deletedTemplateId]) delete dailyOverrides[date][deletedTemplateId];
-      if (!Object.keys(dailyOverrides[date] || {}).length) delete dailyOverrides[date];
-    }
-    saveDailyOverrides();
     if (settings.activeTemplateId === deletedTemplateId) settings.activeTemplateId = templates[0].id;
     for (const day of WEEK_DAYS) {
       if (settings.weekPlan?.days?.[day.key] === deletedTemplateId) settings.weekPlan.days[day.key] = OFF_TEMPLATE_ID;
@@ -2940,17 +3061,13 @@
     els.resetTodayDelayBtn.disabled = delay <= 0;
   }
 
-  function refreshTodayStatusDisplay(date, templateId) {
-    const override = getDailyOverride(date, templateId);
+  function refreshTodayStatusDisplay(date) {
+    const plan = getDatePlan(date);
     const delayMinutes = getDailyDelay(date);
-    els.todayStatusLabel.textContent = override && delayMinutes > 0
-      ? `MODIFIED +${formatDelayDuration(delayMinutes)}`
-      : override
-        ? 'MODIFIED'
-        : delayMinutes > 0
-          ? `DELAYED +${formatDelayDuration(delayMinutes)}`
-          : 'TEMPLATE';
-    els.todayStatusLabel.classList.toggle('is-modified', !!override || delayMinutes > 0);
+    els.todayStatusLabel.textContent = plan
+      ? (delayMinutes > 0 ? `DATE PLAN +${formatDelayDuration(delayMinutes)}` : 'DATE PLAN')
+      : 'TEMPLATE';
+    els.todayStatusLabel.classList.toggle('is-modified', !!plan);
     refreshTodayDelayControls(date);
   }
 
@@ -2963,42 +3080,119 @@
     return hours * 60 + minutes;
   }
 
+  function getTodayDraftSourceTemplate() {
+    if (!todayEditorContext) return null;
+    const id = todayEditorContext.draftSourceTemplateId;
+    return id === OFF_TEMPLATE_ID ? OFF_TEMPLATE : getTemplateById(id);
+  }
+
+  function updateTodayBaseTemplateLabel() {
+    if (!todayEditorContext) return;
+    const source = getTodayDraftSourceTemplate();
+    els.todayBaseTemplate.textContent = source?.name || todayEditorContext.draftSourceTemplateName || 'DATE PLAN';
+  }
+
+  function populateDayPlanTemplateSelect() {
+    if (!els.dayPlanTemplateSelect) return;
+    const current = todayEditorContext?.draftSourceTemplateId || '';
+    els.dayPlanTemplateSelect.replaceChildren();
+    const off = document.createElement('option');
+    off.value = OFF_TEMPLATE_ID;
+    off.textContent = OFF_TEMPLATE.name;
+    els.dayPlanTemplateSelect.appendChild(off);
+    for (const template of templates) {
+      const option = document.createElement('option');
+      option.value = template.id;
+      option.textContent = template.name;
+      els.dayPlanTemplateSelect.appendChild(option);
+    }
+    if ([...els.dayPlanTemplateSelect.options].some(option => option.value === current)) {
+      els.dayPlanTemplateSelect.value = current;
+    }
+  }
+
+  function editorHasUnsavedDayPlanChanges() {
+    if (!todayEditorContext) return false;
+    const tasksChanged = !tasksEquivalent(collectTodayTasks(), todayEditorContext.loadedTasks || []);
+    const draftDelay = readTodayDelayInput();
+    const delayChanged = draftDelay !== null && draftDelay !== getDailyDelay(todayEditorContext.date);
+    return tasksChanged || delayChanged;
+  }
+
+  function confirmDayPlanNavigation() {
+    if (!editorHasUnsavedDayPlanChanges()) return true;
+    return confirm('当前日期有尚未保存的日程修改。切换日期会丢弃这些草稿，继续吗？');
+  }
+
+  function switchDayPlanDate(date) {
+    if (!parseDateKey(date) || date === todayEditorContext?.date) return;
+    if (!confirmDayPlanNavigation()) {
+      els.dayPlanDateInput.value = todayEditorContext?.date || formatDate(getNow());
+      return;
+    }
+    renderTodayEditor(date);
+  }
+
   function applyTodayDelay() {
-    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (!todayEditorContext) return showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
     const total = readTodayDelayInput();
     if (total === null) return showTodayError('推迟时间必须为 0–23 小时与 0–59 分钟。');
 
-    if (total <= 0) clearDailyDelay(todayEditorContext.date);
-    else setDailyDelay(todayEditorContext.date, total);
+    if (!getDatePlan(todayEditorContext.date)) {
+      if (total > 0) {
+        const source = getTodayDraftSourceTemplate() || resolveTemplateForDateKey(todayEditorContext.date);
+        setDatePlan(todayEditorContext.date, {
+          sourceTemplateId: source.id,
+          sourceTemplateName: source.name,
+          tasks: deepClone(source.tasks),
+          delayMinutes: total
+        });
+      }
+    } else {
+      setDailyDelay(todayEditorContext.date, total);
+    }
 
+    todayEditorContext.loadedDelay = total;
     refreshAfterTodayChange();
-    refreshTodayStatusDisplay(todayEditorContext.date, todayEditorContext.templateId);
+    refreshTodayStatusDisplay(todayEditorContext.date);
     showTodayMessage(total > 0
-      ? `今天的日程已整体推迟 ${formatDelayDuration(total)}；超过 23:59 的部分会直接消失。`
-      : '今天的日程推迟已取消。');
+      ? `${todayEditorContext.date} 的日程已整体推迟 ${formatDelayDuration(total)}；超过 23:59 的部分会直接消失。`
+      : `${todayEditorContext.date} 的日程推迟已取消。`);
   }
 
   function resetTodayDelay() {
-    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (!todayEditorContext) return showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
     if (getDailyDelay(todayEditorContext.date) <= 0) return;
     clearDailyDelay(todayEditorContext.date);
+    todayEditorContext.loadedDelay = 0;
     refreshAfterTodayChange();
-    refreshTodayStatusDisplay(todayEditorContext.date, todayEditorContext.templateId);
-    showTodayMessage('今天的日程推迟已取消。');
+    refreshTodayStatusDisplay(todayEditorContext.date);
+    showTodayMessage(`${todayEditorContext.date} 的日程推迟已取消。`);
   }
 
-  function renderTodayEditor() {
-    const now = getNow();
-    const date = formatDate(now);
-    const template = getActiveTemplate(now);
-    const override = getDailyOverride(date, template.id);
-    const tasks = deepClone(override ? override.tasks : template.tasks)
+  function renderTodayEditor(date = formatDate(getNow())) {
+    const validDate = parseDateKey(date) ? date : formatDate(getNow());
+    const defaultTemplate = resolveTemplateForDateKey(validDate);
+    const plan = getDatePlan(validDate);
+    const sourceTemplate = plan?.sourceTemplateId === OFF_TEMPLATE_ID
+      ? OFF_TEMPLATE
+      : getTemplateById(plan?.sourceTemplateId) || defaultTemplate;
+    const sourceName = plan?.sourceTemplateName || sourceTemplate?.name || defaultTemplate.name;
+    const tasks = deepClone(plan ? plan.tasks : defaultTemplate.tasks)
       .sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start));
 
-    todayEditorContext = { date, templateId: template.id };
-    els.todayDateLabel.textContent = date;
-    els.todayBaseTemplate.textContent = template.name;
-    refreshTodayStatusDisplay(date, template.id);
+    todayEditorContext = {
+      date: validDate,
+      draftSourceTemplateId: plan?.sourceTemplateId || defaultTemplate.id,
+      draftSourceTemplateName: sourceName,
+      loadedTasks: deepClone(tasks),
+      loadedDelay: plan?.delayMinutes || 0
+    };
+    els.dayPlanDateInput.value = validDate;
+    els.todayDateLabel.textContent = validDate;
+    updateTodayBaseTemplateLabel();
+    populateDayPlanTemplateSelect();
+    refreshTodayStatusDisplay(validDate);
     els.todayRows.replaceChildren();
     for (const task of tasks) addTodayRow(task);
     refreshTodayInsertControls();
@@ -3007,6 +3201,23 @@
     els.todayMessage.hidden = true;
     closeTodayTemplatePanel();
     refreshTodayTemplateWeekAction();
+  }
+
+  function loadTemplateIntoDayPlanEditor() {
+    if (!todayEditorContext) return;
+    const template = getTemplateById(els.dayPlanTemplateSelect.value);
+    if (!template) return showTodayError('所选模板不存在。');
+    if (editorHasUnsavedDayPlanChanges() && !confirm('用所选模板替换当前日期编辑器中的草稿？尚未保存的草稿会丢失，但模板本身不会被修改。')) return;
+
+    todayEditorContext.draftSourceTemplateId = template.id;
+    todayEditorContext.draftSourceTemplateName = template.name;
+    els.todayRows.replaceChildren();
+    for (const task of deepClone(template.tasks).sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start))) addTodayRow(task);
+    refreshTodayInsertControls();
+    renderTodayEmptyState();
+    updateTodayBaseTemplateLabel();
+    hideTodayError();
+    els.todayMessage.hidden = true;
   }
 
   function addTodayRow(task = { start: '', end: '', name: '', category: 'custom', note: '' }, beforeNode = null) {
@@ -3035,7 +3246,7 @@
     if (els.todayRows.querySelector('.empty-state')) return;
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'NO BLOCKS // TODAY WILL BE FREE';
+    empty.textContent = 'NO BLOCKS // THIS DATE WILL BE FREE';
     els.todayRows.appendChild(empty);
   }
 
@@ -3086,7 +3297,7 @@
 
   function getValidatedTodayEditorTasks({ allowEmpty = true } = {}) {
     if (!todayEditorContext) {
-      showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+      showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
       return null;
     }
     const tasks = collectTodayTasks();
@@ -3102,10 +3313,10 @@
   function openTodayTemplatePanel() {
     const tasks = getValidatedTodayEditorTasks({ allowEmpty: false });
     if (!tasks) return;
-    const base = getTemplateById(todayEditorContext.templateId);
+    const base = getTodayDraftSourceTemplate();
     const fallbackName = base && base.id !== OFF_TEMPLATE_ID
       ? `${base.name} - ${todayEditorContext.date}`
-      : `TODAY - ${todayEditorContext.date}`;
+      : `DATE - ${todayEditorContext.date}`;
     els.todayTemplateNameInput.value = '';
     els.todayTemplateNameInput.placeholder = fallbackName;
     els.todayTemplatePanel.hidden = false;
@@ -3124,7 +3335,7 @@
   }
 
   function saveTodayAsTemplate(mode) {
-    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (!todayEditorContext) return showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
     if (mode === 'week' && !settings.weekPlan?.enabled) {
       refreshTodayTemplateWeekAction();
       return;
@@ -3141,22 +3352,19 @@
     if (!tasks) return;
 
     const date = todayEditorContext.date;
-    const originalTemplateId = todayEditorContext.templateId;
-    const originalTemplate = getTemplateById(originalTemplateId);
-    if (!originalTemplate) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
-
     const created = createTemplateFromToday(name, tasks);
 
     if (mode === 'today') {
-      if (tasksEquivalent(created.tasks, originalTemplate.tasks)) {
-        clearDailyOverride(date, originalTemplateId);
-      } else {
-        setDailyOverride(date, originalTemplateId, created.tasks);
-      }
+      setDatePlan(date, {
+        sourceTemplateId: created.id,
+        sourceTemplateName: created.name,
+        tasks: created.tasks,
+        delayMinutes: getDailyDelay(date)
+      });
     } else if (mode === 'week') {
-      const todayKey = String(getNow().getDay());
-      settings.weekPlan.days[todayKey] = created.id;
-      clearDailyOverride(date, originalTemplateId);
+      const dayKey = String(parseDateKey(date).getDay());
+      settings.weekPlan.days[dayKey] = created.id;
+      clearDatePlan(date);
     }
 
     saveAll();
@@ -3165,35 +3373,35 @@
     closeTodayTemplatePanel();
 
     if (mode === 'save') {
-      showTodayMessage(`模板“${created.name}”已保存；TODAY 与 WEEK PLAN 未改变。`);
+      showTodayMessage(`模板“${created.name}”已保存；当前 DATE PLAN 与 WEEK PLAN 未改变。`);
       return;
     }
 
     refreshAfterTodayChange();
-    renderTodayEditor();
+    renderTodayEditor(date);
     if (mode === 'week') {
-      showTodayMessage(`模板“${created.name}”已保存，并已替换 WEEK PLAN 中今天的模板。`);
+      showTodayMessage(`模板“${created.name}”已保存，并已替换 WEEK PLAN 中该星期的模板；${date} 已回到 WEEK PLAN。`);
     } else {
-      showTodayMessage(`模板“${created.name}”已保存，并仅应用到今天；WEEK PLAN 未改变。`);
+      showTodayMessage(`模板“${created.name}”已保存，并仅应用到 ${date}；其他日期与 WEEK PLAN 未改变。`);
     }
   }
 
   function exportTodayJson() {
-    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
+    if (!todayEditorContext) return showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
     const tasks = getValidatedTodayEditorTasks({ allowEmpty: true });
     if (!tasks) return;
-    const base = getTemplateById(todayEditorContext.templateId);
-    if (!base) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
-
-    const dayKey = String(getNow().getDay());
+    const source = getTodayDraftSourceTemplate();
+    const dayKey = String(parseDateKey(todayEditorContext.date).getDay());
     const payload = {
       app: 'TEMPO-7',
       appVersion: APP_VERSION,
-      schemaVersion: 1,
-      exportType: 'today',
+      schemaVersion: 2,
+      exportType: 'date-plan',
       exportedAt: new Date().toISOString(),
       date: todayEditorContext.date,
-      baseTemplate: { id: base.id, name: base.name },
+      sourceTemplate: source
+        ? { id: source.id, name: source.name }
+        : { id: todayEditorContext.draftSourceTemplateId || null, name: todayEditorContext.draftSourceTemplateName || 'DATE PLAN' },
       weekPlan: {
         enabled: !!settings.weekPlan?.enabled,
         weekday: dayKey,
@@ -3207,12 +3415,12 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `TEMPO-7-today-${todayEditorContext.date}.json`;
+    a.download = `TEMPO-7-date-plan-${todayEditorContext.date}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showTodayMessage(`TODAY 已导出：TEMPO-7-today-${todayEditorContext.date}.json`);
+    showTodayMessage(`DATE PLAN 已导出：TEMPO-7-date-plan-${todayEditorContext.date}.json`);
   }
 
   function refreshAfterTodayChange() {
@@ -3224,37 +3432,35 @@
   }
 
   function saveTodayOverride() {
-    if (!todayEditorContext) return showTodayError('今日编辑器状态无效，请重新打开 TODAY。');
-    const template = getTemplateById(todayEditorContext.templateId);
-    if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
-
+    if (!todayEditorContext) return showTodayError('日期日程编辑器状态无效，请重新打开 TODAY。');
     const tasks = getValidatedTodayEditorTasks({ allowEmpty: true });
     if (!tasks) return;
+    const source = getTodayDraftSourceTemplate() || resolveTemplateForDateKey(todayEditorContext.date);
 
-    if (tasksEquivalent(tasks, template.tasks)) {
-      clearDailyOverride(todayEditorContext.date, template.id);
-    } else {
-      setDailyOverride(todayEditorContext.date, template.id, tasks);
-    }
+    setDatePlan(todayEditorContext.date, {
+      sourceTemplateId: source?.id || todayEditorContext.draftSourceTemplateId,
+      sourceTemplateName: source?.name || todayEditorContext.draftSourceTemplateName,
+      tasks,
+      delayMinutes: getDailyDelay(todayEditorContext.date)
+    });
 
+    todayEditorContext.loadedTasks = deepClone(tasks);
     refreshAfterTodayChange();
     els.todayDialog.close();
   }
 
   function resetTodayOverride() {
     if (!todayEditorContext) return;
-    const template = getTemplateById(todayEditorContext.templateId);
-    if (!template) return showTodayError('基础模板已不存在，请重新打开 TODAY。');
-    const hasOverride = !!getDailyOverride(todayEditorContext.date, template.id);
-    const hasDelay = getDailyDelay(todayEditorContext.date) > 0;
-    const hasUnsavedChanges = !tasksEquivalent(collectTodayTasks(), template.tasks);
-    if ((hasOverride || hasDelay || hasUnsavedChanges) && !confirm('把今天恢复为基础模板？当前 TODAY 修改与推迟设置都会被清除。')) return;
+    const plan = getDatePlan(todayEditorContext.date);
+    const defaultTemplate = resolveTemplateForDateKey(todayEditorContext.date);
+    const hasUnsavedChanges = !tasksEquivalent(collectTodayTasks(), plan?.tasks || defaultTemplate.tasks);
+    if ((plan || hasUnsavedChanges) && !confirm(`把 ${todayEditorContext.date} 恢复为该日期的 WEEK PLAN / 默认模板？该日期的 DATE PLAN 与推迟设置都会被清除。`)) return;
 
-    clearDailyOverride(todayEditorContext.date, template.id);
-    clearDailyDelay(todayEditorContext.date);
+    const date = todayEditorContext.date;
+    clearDatePlan(date);
     refreshAfterTodayChange();
-    renderTodayEditor();
-    showTodayMessage('今天已恢复为基础模板，推迟设置已清除。');
+    renderTodayEditor(date);
+    showTodayMessage(`${date} 已恢复为 WEEK PLAN / 默认模板；模板本身没有被修改。`);
   }
 
   function loadRunState() {
@@ -3423,14 +3629,13 @@
       const payload = {
         app: 'TEMPO-7',
         appVersion: APP_VERSION,
-        schemaVersion: 7,
+        schemaVersion: 8,
         backupType: 'full',
         exportedAt: new Date().toISOString(),
         templates,
         customTypes,
         settings,
-        dailyOverrides,
-        dailyDelays,
+        datePlans,
         media: {
           format: 1,
           audioAssets
@@ -3450,36 +3655,13 @@
       const audioSummary = audioAssets.length
         ? `${audioAssets.length} 个铃声音频（原始音频约 ${formatFileSize(audioBytes)}）`
         : '未配置铃声音频';
-      showDataMessage(`完整备份已导出：模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、TODAY DELAY、外观、铃声设置和 ${audioSummary}。`, true);
+      showDataMessage(`完整备份已导出：模板、自定义 TYPE、TASK NOTE、WEEK PLAN、DATE PLAN、外观、铃声设置和 ${audioSummary}。`, true);
     } catch (err) {
       showDataMessage(err.message || '完整备份导出失败。', false);
     } finally {
       els.exportJsonBtn.disabled = false;
       els.exportJsonBtn.textContent = originalText;
     }
-  }
-
-  function normalizeImportedOverrides(rawOverrides, importedTemplates, importedCustomTypes = []) {
-    const result = {};
-    if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) return result;
-    const templateIds = new Set([OFF_TEMPLATE_ID, ...importedTemplates.map(template => template.id)]);
-
-    for (const [date, byTemplate] of Object.entries(rawOverrides)) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !byTemplate || typeof byTemplate !== 'object' || Array.isArray(byTemplate)) continue;
-      for (const [templateId, entry] of Object.entries(byTemplate)) {
-        if (!templateIds.has(templateId) || !entry || !Array.isArray(entry.tasks)) continue;
-        const tasks = normalizeTasks(entry.tasks, importedCustomTypes);
-        const error = validateTasks(tasks, { allowEmpty: true });
-        if (error) throw new Error(`TODAY OVERRIDE ${date} 无效：${error}`);
-        if (!result[date]) result[date] = {};
-        result[date][templateId] = {
-          templateId,
-          tasks: tasks.sort((a, b) => timeToSeconds(a.start) - timeToSeconds(b.start)),
-          updatedAt: entry.updatedAt || new Date().toISOString()
-        };
-      }
-    }
-    return result;
   }
 
   async function importJson(file) {
@@ -3501,8 +3683,6 @@
 
       customTypes = importedCustomTypes;
       templates = importedTemplates;
-      dailyOverrides = normalizeImportedOverrides(payload.dailyOverrides, importedTemplates, importedCustomTypes);
-      dailyDelays = normalizeDailyDelays(payload.dailyDelays);
 
       const requestedId = payload.settings?.activeTemplateId;
       const importedVolume = Number(payload.settings?.sound?.volume);
@@ -3517,6 +3697,10 @@
           bindings: buildSoundBindings(importedCustomTypes)
         }
       };
+      datePlans = payload.datePlans
+        ? normalizeDatePlans(payload.datePlans, importedTemplates, importedCustomTypes)
+        : migrateLegacyDayData(payload.dailyOverrides, payload.dailyDelays, importedTemplates, settings, importedCustomTypes);
+      cleanupExpiredDatePlans({ markDirty: false });
 
       const hasFullMedia = payload.backupType === 'full' && Array.isArray(payload.media?.audioAssets);
       const mediaResult = hasFullMedia
@@ -3526,8 +3710,7 @@
       const importedEffective = getActiveTemplate();
       editorTemplateId = importedEffective.id === OFF_TEMPLATE_ID ? settings.activeTemplateId : importedEffective.id;
       saveAll();
-      saveDailyOverrides();
-      saveDailyDelays();
+      saveDatePlans();
       refreshTemplateSelects();
       await refreshSoundUi();
       scheduleCruise.renderKey = null;
@@ -3538,7 +3721,7 @@
       const mediaMessage = mediaResult.legacy
         ? '这是旧版配置备份，不含音频本体；当前浏览器已有铃声保持不变。'
         : `已同步恢复 ${mediaResult.restored} 个铃声音频；备份中未配置的铃声槽位已同步清空。`;
-      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、TODAY OVERRIDE、TODAY DELAY 与铃声设置。${mediaMessage} 重新打开或点击 AUDIO 后可恢复音频播放。`, true);
+      showDataMessage(`恢复完成：${templates.length} 个模板、${customTypes.length} 个自定义 TYPE、TASK NOTE、WEEK PLAN、外观设置、DATE PLAN 与铃声设置。${mediaMessage} 重新打开或点击 AUDIO 后可恢复音频播放。`, true);
     } catch (err) {
       showDataMessage(err.message || '导入失败。', false);
     } finally {
@@ -3623,7 +3806,7 @@
     });
     els.installAppBtn?.addEventListener('click', installTempo7);
     els.todayBtn.addEventListener('click', () => {
-      renderTodayEditor();
+      renderTodayEditor(formatDate(getNow()));
       els.todayDialog.showModal();
     });
     els.weekPlanBtn.addEventListener('click', () => {
@@ -3659,6 +3842,12 @@
     els.deleteTemplateBtn.addEventListener('click', deleteTemplate);
 
     els.addTodayNewTypeBtn.addEventListener('click', openTypeManager);
+    els.dayPlanPrevBtn?.addEventListener('click', () => switchDayPlanDate(addDaysToDateKey(todayEditorContext?.date || formatDate(getNow()), -1)));
+    els.dayPlanNextBtn?.addEventListener('click', () => switchDayPlanDate(addDaysToDateKey(todayEditorContext?.date || formatDate(getNow()), 1)));
+    els.dayPlanTodayBtn?.addEventListener('click', () => switchDayPlanDate(formatDate(getNow())));
+    els.dayPlanTomorrowBtn?.addEventListener('click', () => switchDayPlanDate(addDaysToDateKey(formatDate(getNow()), 1)));
+    els.dayPlanDateInput?.addEventListener('change', () => switchDayPlanDate(els.dayPlanDateInput.value));
+    els.dayPlanLoadTemplateBtn?.addEventListener('click', loadTemplateIntoDayPlanEditor);
     els.addTodayTaskBtn.addEventListener('click', () => {
       addTodayRow();
       hideTodayError();
@@ -3817,6 +4006,7 @@
   }
 
   function init() {
+    cleanupExpiredDatePlans();
     applyAppearance(settings.appearance);
     refreshTemplateSelects();
     bindPwaEvents();

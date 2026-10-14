@@ -1279,3 +1279,45 @@ body.launch-active.launch-settling .shared-brand-block .microline {
 @media (max-width: 860px) {
   .task-insert-slot { margin: 0 0 8px; }
 }
+
+
+/* v0.8.5 — TODAY becomes a date-aware DAY PLAN editor */
+.day-plan-nav {
+  display: grid;
+  grid-template-columns: auto minmax(190px, 260px) auto auto auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 18px;
+}
+.day-plan-date-field { margin: 0; }
+.day-plan-step { min-width: 44px; padding-inline: 12px; }
+.day-plan-source-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto minmax(220px, 1.2fr);
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.day-plan-source-panel > span {
+  align-self: center;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+@media (max-width: 820px) {
+  .day-plan-nav { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .day-plan-nav #dayPlanTodayBtn,
+  .day-plan-nav #dayPlanTomorrowBtn { grid-column: span 1; }
+  .day-plan-source-panel { grid-template-columns: 1fr auto; }
+  .day-plan-source-panel > span { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .day-plan-nav { grid-template-columns: 1fr 1fr; }
+  .day-plan-date-field { grid-column: 1 / -1; grid-row: 1; }
+  .day-plan-step { width: 100%; }
+  .day-plan-source-panel { grid-template-columns: 1fr; }
+  .day-plan-source-panel .btn { width: 100%; }
+}

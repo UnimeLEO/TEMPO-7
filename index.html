@@ -15,7 +15,7 @@
   <link rel="icon" href="favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>TEMPO-7</title>
-  <link rel="stylesheet" href="style.css?v=0.8.4" />
+  <link rel="stylesheet" href="style.css?v=0.8.5" />
 </head>
 <body class="launch-active">
   <div id="launchOverlay" class="launch-overlay" role="button" tabindex="0" aria-label="Press anywhere to start your day">
@@ -32,7 +32,7 @@
     <div id="brandDock" class="brand-dock">
       <div id="sharedBrandBlock" class="brand-wrap shared-brand-block">
         <div class="brand">TEMPO-7</div>
-        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.4</span><span id="systemDate">----</span></div>
+        <div class="microline"><span>ROUTINE CONTROL</span><span>V0.8.5</span><span id="systemDate">----</span></div>
       </div>
     </div>
 
@@ -160,11 +160,22 @@
     <form method="dialog" class="modal-frame">
       <div class="modal-titlebar">
         <div>
-          <div class="eyebrow">TODAY OVERRIDE</div>
-          <h2>今日临时修改</h2>
+          <div class="eyebrow">DAY PLAN</div>
+          <h2>TODAY / 日期日程</h2>
         </div>
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
+
+      <section class="day-plan-nav" aria-label="选择日期">
+        <button type="button" id="dayPlanPrevBtn" class="btn day-plan-step" aria-label="前一天">←</button>
+        <label class="field day-plan-date-field">
+          <span>DATE</span>
+          <input id="dayPlanDateInput" type="date" />
+        </label>
+        <button type="button" id="dayPlanNextBtn" class="btn day-plan-step" aria-label="后一天">→</button>
+        <button type="button" id="dayPlanTodayBtn" class="btn">TODAY</button>
+        <button type="button" id="dayPlanTomorrowBtn" class="btn">TOMORROW</button>
+      </section>
 
       <div class="today-meta-grid">
         <div class="today-meta-cell"><span>DATE</span><strong id="todayDateLabel">----</strong></div>
@@ -172,11 +183,20 @@
         <div class="today-meta-cell"><span>STATE</span><strong id="todayStatusLabel">TEMPLATE</strong></div>
       </div>
 
-      <section class="today-delay-panel" aria-label="今日推迟">
+      <section class="day-plan-source-panel" aria-label="日期日程基础模板">
+        <label class="field grow">
+          <span>LOAD TEMPLATE AS BASE</span>
+          <select id="dayPlanTemplateSelect"></select>
+        </label>
+        <button type="button" id="dayPlanLoadTemplateBtn" class="btn">LOAD TEMPLATE</button>
+        <span>载入只会替换当前日期编辑器中的草稿；不会修改模板，也不会影响其他日期。</span>
+      </section>
+
+      <section class="today-delay-panel" aria-label="所选日期推迟">
         <div class="today-delay-copy">
-          <div class="eyebrow">DELAY TODAY</div>
+          <div class="eyebrow">DELAY DATE</div>
           <strong id="todayDelayStatus">NO DELAY</strong>
-          <span>整日日程向后平移；任务长度保持不变，越过 23:59 的部分直接截去。仅影响今天。</span>
+          <span>所选日期的日程整体向后平移；任务长度保持不变，越过 23:59 的部分直接截去，只影响该日期。</span>
         </div>
         <label class="today-delay-field">
           <span>HOURS</span>
@@ -190,7 +210,7 @@
         <button type="button" id="resetTodayDelayBtn" class="btn">RESET DELAY</button>
       </section>
 
-      <div class="editor-hint">这里只修改今天。下方任务时间保持为未推迟的基准时间；DELAY TODAY 会在运行时整体后移。可使用行间的 + INSERT 插入新日程；SKIP 会移除今日任务；✎ 可编辑单行 NOTE（最多 200 字符）；TODAY 修改不会污染基础模板。</div>
+      <div class="editor-hint">这里编辑的是某一个具体日期的一次性日程快照。默认从该日期的 WEEK PLAN / 当前模板生成，也可载入任意模板作为底稿；修改名称、NOTE、时间、INSERT、SKIP 或 DELAY 都不会回写模板，也不会影响后一天或后一周。旧 DATE PLAN 会在超过保留期后自动清理。</div>
 
       <div class="today-editor-head">
         <span>START</span><span>END</span><span>TASK</span><span>TYPE</span><span>NOTE</span><span>ACTION</span>
@@ -203,7 +223,7 @@
       <section id="todayTemplatePanel" class="today-template-panel" hidden>
         <div class="today-template-panel-head">
           <div>
-            <div class="eyebrow">SAVE TODAY AS TEMPLATE</div>
+            <div class="eyebrow">SAVE DATE AS TEMPLATE</div>
             <h3>储存为模板</h3>
           </div>
           <button type="button" id="closeTodayTemplatePanelBtn" class="icon-btn" aria-label="关闭储存为模板面板">×</button>
@@ -214,7 +234,7 @@
         </label>
         <div class="today-template-actions">
           <button type="button" id="saveTodayAsTemplateBtn" class="btn">SAVE</button>
-          <button type="button" id="saveTodayApplyBtn" class="btn btn-primary">SAVE &amp; APPLY TO TODAY</button>
+          <button type="button" id="saveTodayApplyBtn" class="btn btn-primary">SAVE &amp; APPLY TO DATE</button>
           <span id="saveTodayWeekWrap" class="button-tooltip">
             <button type="button" id="saveTodayWeekBtn" class="btn">SAVE &amp; APPLY TO WEEK PLAN</button>
           </span>
@@ -225,13 +245,13 @@
         <div class="left-actions">
           <button type="button" id="addTodayTaskBtn" class="btn">+ ADD TASK</button>
           <button type="button" id="addTodayNewTypeBtn" class="btn">+ ADD NEW TYPE</button>
-          <button type="button" id="resetTodayBtn" class="btn btn-danger-outline">RESET TODAY</button>
-          <button type="button" id="exportTodayBtn" class="btn">EXPORT TODAY JSON</button>
+          <button type="button" id="resetTodayBtn" class="btn btn-danger-outline">RESET DATE</button>
+          <button type="button" id="exportTodayBtn" class="btn">EXPORT DATE JSON</button>
           <button type="button" id="openTodayTemplatePanelBtn" class="btn">SAVE AS TEMPLATE</button>
         </div>
         <div class="right-actions">
           <button class="btn" value="cancel">CANCEL</button>
-          <button type="button" id="saveTodayBtn" class="btn btn-primary">SAVE TODAY</button>
+          <button type="button" id="saveTodayBtn" class="btn btn-primary">SAVE DATE</button>
         </div>
       </div>
     </form>
@@ -247,7 +267,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">启用后，TEMPO-7 会按星期自动选择基础模板。OFF / NO SCHEDULE 表示当天没有基础日程；即使是 OFF，当天仍可通过 TODAY 临时添加任务。</p>
+      <p class="modal-copy">启用后，TEMPO-7 会按星期自动选择基础模板。OFF / NO SCHEDULE 表示当天没有基础日程；即使是 OFF，具体日期仍可通过 TODAY / DAY PLAN 单独建立日程。</p>
 
       <label class="switch-field week-master-switch">
         <input id="weekPlanEnabledInput" type="checkbox" />
@@ -274,7 +294,7 @@
         <button class="icon-btn" value="cancel" aria-label="关闭">×</button>
       </div>
 
-      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、TODAY OVERRIDE、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件。Personal Cloud Sync 则负责在多设备之间自动同步这些数据。</p>
+      <p class="modal-copy">TEMPO-7 平时自动把数据保存在当前浏览器中。FULL BACKUP 会把模板、自定义 TYPE、TASK NOTE、WEEK PLAN、DATE PLAN、外观、所有 TYPE 的铃声设置以及已导入的 MP3 / WAV 音频本体一起封装进单个 JSON 文件。Personal Cloud Sync 则负责在多设备之间自动同步这些数据。</p>
       <p class="editor-hint">浏览器音频播放权限和当前运行会话属于设备 / 会话状态，不会迁移；恢复后请重新经过启动页点击，或使用顶栏 AUDIO 手动恢复声音。</p>
 
       <div class="data-actions">
@@ -511,6 +531,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.8.4"></script>
+  <script src="app.js?v=0.8.5"></script>
 </body>
 </html>
